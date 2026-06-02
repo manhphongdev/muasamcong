@@ -1,8 +1,18 @@
 spring:
   application:
     name: muasamcong
+
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/muasamcong}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+server:
+  port: 8888
