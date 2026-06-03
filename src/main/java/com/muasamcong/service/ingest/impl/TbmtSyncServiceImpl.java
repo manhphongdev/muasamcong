@@ -18,11 +18,13 @@ import com.muasamcong.repository.InvestorRepository;
 import java.time.OffsetDateTime;
 import com.muasamcong.service.ingest.TbmtSyncService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TbmtSyncServiceImpl implements TbmtSyncService {
     private final ContractRepository contractRepository;
     private final ContractInfoRepository contractInfoRepository;
@@ -36,6 +38,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
     @Transactional
     public TbmtIngestResult syncByNotifyNo(String notifyNo) {
         String normalizedNotifyNo = normalizeNotifyNo(notifyNo);
+        log.info("Sync TBMT start notifyNo={}", normalizedNotifyNo);
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
@@ -51,6 +54,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, tbmt, investor);
         Bidding bidding = upsertBidding(upsertedContractInfo.contractInfo(), tbmt);
 
+        log.info("Sync TBMT done notifyNo={}, created={}", normalizedNotifyNo, upsertedContractInfo.created());
         return new TbmtIngestResult(
                 normalizedNotifyNo,
                 contract.getId(),
