@@ -64,7 +64,7 @@ public class TbmtPayloadMapper {
         }
     }
 
-    public Boolean boolFromInt(JsonNode node, String field) {
+    public Boolean booleanValue(JsonNode node, String field) {
         JsonNode value = node == null ? null : node.get(field);
         if (value == null || value.isNull()) {
             return null;

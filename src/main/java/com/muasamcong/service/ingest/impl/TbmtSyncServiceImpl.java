@@ -84,8 +84,8 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         info.setContractPeriod(mapper.integer(tbmt, "contractPeriod"));
         info.setContractPeriodUnit(mapper.text(tbmt, "contractPeriodUnit"));
         info.setMultiLot(resolveMultiLot(tbmt));
-        info.setDomestic(mapper.boolFromInt(tbmt, "isDomestic"));
-        info.setPrequalification(mapper.boolFromInt(tbmt, "isPrequalification"));
+        info.setDomestic(mapper.booleanValue(tbmt, "isDomestic"));
+        info.setPrequalification(mapper.booleanValue(tbmt, "isPrequalification"));
         info.setFetchedAt(OffsetDateTime.now());
 
         return new UpsertedContractInfo(contractInfoRepository.save(info), created);
@@ -98,7 +98,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
             bidding.setContractInfo(contractInfo);
         }
 
-        bidding.setInternet(mapper.boolFromInt(tbmt, "isInternet"));
+        bidding.setInternet(mapper.booleanValue(tbmt, "isInternet"));
         bidding.setSubmissionMethod(mapper.text(tbmt, "submissionMethod"));
         bidding.setIssueLocation(mapper.text(tbmt, "issueLocation"));
         bidding.setReceiveLocation(mapper.text(tbmt, "receiveLocation"));
@@ -142,7 +142,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
     }
 
     private Boolean resolveMultiLot(JsonNode tbmt) {
-        Boolean value = mapper.boolFromInt(tbmt, "isMultiLot");
+        Boolean value = mapper.booleanValue(tbmt, "isMultiLot");
         if (value != null) {
             return value;
         }

@@ -1,5 +1,6 @@
 package com.muasamcong.controller;
 
+import com.muasamcong.dto.ApiResponse;
 import com.muasamcong.dto.ContractInfoSyncResult;
 import com.muasamcong.dto.TbmtIngestResult;
 import com.muasamcong.service.ingest.ContractInfoSyncService;
@@ -18,12 +19,12 @@ public class ContractInfoSyncController {
     private final TbmtSyncService tbmtSyncService;
 
     @PostMapping("/sync-from-contracts")
-    public ContractInfoSyncResult syncFromContracts() {
-        return contractInfoSyncService.syncFromContracts();
+    public ApiResponse<ContractInfoSyncResult> syncFromContracts() {
+        return ApiResponse.success(contractInfoSyncService.syncFromContracts());
     }
 
-    @PostMapping("/sync/{notifyNo}")
-    public TbmtIngestResult syncOne(@PathVariable String notifyNo) {
-        return tbmtSyncService.syncByNotifyNo(notifyNo);
+    @PostMapping({"/sync/{notifyNo}", "/ingest/{notifyNo}"})
+    public ApiResponse<TbmtIngestResult> syncOne(@PathVariable String notifyNo) {
+        return ApiResponse.success(tbmtSyncService.syncByNotifyNo(notifyNo));
     }
 }

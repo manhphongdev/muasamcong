@@ -2,10 +2,16 @@ package com.muasamcong.integration.portal;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.muasamcong.exception.PortalBlockedException;
+import com.muasamcong.exception.PortalHttpException;
+import com.muasamcong.exception.PortalRequestException;
+import com.muasamcong.exception.PortalTimeoutException;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import org.springframework.stereotype.Component;
@@ -34,13 +40,26 @@ public class PortalJsonClient {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             );
 
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Portal HTTP " + response.statusCode());
+            int statusCode = response.statusCode();
+            if (statusCode == 403 || statusCode == 429) {
+                throw new PortalBlockedException(statusCode, "Portal blocked request: HTTP " + statusCode);
+            }
+            if (statusCode < 200 || statusCode >= 300) {
+                throw new PortalHttpException(statusCode, "Portal HTTP " + statusCode);
             }
 
             return objectMapper.readTree(response.body());
+        } catch (PortalRequestException ex) {
+            throw ex;
+        } catch (HttpTimeoutException ex) {
+            throw new PortalTimeoutException("Portal request timeout", ex);
+        } catch (IOException ex) {
+            throw new PortalRequestException("Portal request failed: " + ex.getMessage(), ex);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new PortalRequestException("Portal request interrupted", ex);
         } catch (Exception ex) {
-            throw new IllegalStateException("Portal request failed: " + ex.getMessage(), ex);
+            throw new PortalRequestException("Cannot parse portal response", ex);
         }
     }
 
