@@ -14,6 +14,7 @@ import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.repository.ProcurementPlanRepository;
 import com.muasamcong.service.bidopening.BidOpeningSyncService;
 import com.muasamcong.service.bidpackage.BidPackageSyncQueueService;
+import com.muasamcong.service.biddingresult.BiddingResultSyncService;
 import com.muasamcong.service.ingest.TbmtSyncService;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -36,6 +37,7 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
     private final PortalSearchClient portalSearchClient;
     private final TbmtSyncService tbmtSyncService;
     private final BidOpeningSyncService bidOpeningSyncService;
+    private final BiddingResultSyncService biddingResultSyncService;
 
     @Override
     public BidPackageSyncPendingResult syncPending(int limit) {
@@ -119,6 +121,7 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
 
             TbmtIngestResult ingestResult = tbmtSyncService.syncByNotifyNo(notifyNo);
             bidOpeningSyncService.syncByNotifyNo(notifyNo);
+            biddingResultSyncService.syncByNotifyNo(notifyNo);
 
             item.setSyncStatus(BidPackageSyncStatus.SUCCESS);
             item.setLastSyncedAt(OffsetDateTime.now());
