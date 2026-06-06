@@ -7,10 +7,12 @@ import com.muasamcong.dto.TbmtIngestResult;
 import com.muasamcong.integration.portal.PortalSearchClient;
 import com.muasamcong.integration.portal.PortalTbmtClient;
 import com.muasamcong.mapper.TbmtPayloadMapper;
+import com.muasamcong.model.BidOpening;
 import com.muasamcong.model.Bidding;
 import com.muasamcong.model.Contract;
 import com.muasamcong.model.ContractInfo;
 import com.muasamcong.model.Investor;
+import com.muasamcong.repository.BidOpeningRepository;
 import com.muasamcong.repository.BiddingRepository;
 import com.muasamcong.repository.ContractInfoRepository;
 import com.muasamcong.repository.ContractRepository;
@@ -28,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class TbmtSyncServiceImpl implements TbmtSyncService {
     private final ContractRepository contractRepository;
     private final ContractInfoRepository contractInfoRepository;
+    private final BidOpeningRepository bidOpeningRepository;
     private final BiddingRepository biddingRepository;
     private final InvestorRepository investorRepository;
     private final PortalSearchClient portalSearchClient;
@@ -53,6 +56,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         Investor investor = upsertInvestor(tbmt);
         UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, tbmt, investor);
         Bidding bidding = upsertBidding(upsertedContractInfo.contractInfo(), tbmt);
+        upsertBidOpening(upsertedContractInfo.contractInfo(), root);
 
         log.info("Sync TBMT done notifyNo={}, created={}", normalizedNotifyNo, upsertedContractInfo.created());
         return new TbmtIngestResult(
@@ -85,6 +89,11 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         info.setContractPeriodUnit(mapper.text(tbmt, "contractPeriodUnit"));
         info.setMultiLot(resolveMultiLot(tbmt));
         info.setDomestic(mapper.booleanValue(tbmt, "isDomestic"));
+        info.setBidPrice(mapper.longValue(tbmt, "bidPrice"));
+        info.setBidPriceUnit(mapper.text(tbmt, "bidPriceUnit"));
+        info.setBidEstimatePrice(mapper.longValue(tbmt, "bidEstimatePrice"));
+        info.setBidValidityPeriod(mapper.integer(tbmt, "bidValidityPeriod"));
+        info.setBidValidityPeriodUnit(mapper.text(tbmt, "bidValidityPeriodUnit"));
         info.setPrequalification(mapper.booleanValue(tbmt, "isPrequalification"));
         info.setFetchedAt(OffsetDateTime.now());
 
@@ -109,14 +118,29 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         bidding.setBidCloseAt(mapper.dateTime(tbmt, "bidCloseDate"));
         bidding.setBidOpenAt(mapper.dateTime(tbmt, "bidOpenDate"));
         bidding.setBidOpenLocation(mapper.text(tbmt, "bidOpenLocation"));
-        bidding.setBidValidityPeriod(mapper.integer(tbmt, "bidValidityPeriod"));
-        bidding.setBidValidityUnit(mapper.text(tbmt, "bidValidityPeriodUnit"));
         bidding.setGuaranteeValue(mapper.decimal(tbmt, "guaranteeValue"));
         bidding.setGuaranteeUnit(mapper.text(tbmt, "guaranteeUnit"));
         bidding.setGuaranteeForm(mapper.text(tbmt, "guaranteeForm"));
         bidding.setFetchedAt(OffsetDateTime.now());
 
         return biddingRepository.save(bidding);
+    }
+
+    private BidOpening upsertBidOpening(ContractInfo contractInfo, JsonNode root) {
+        JsonNode bidStatus = root == null ? null : root.get("bidoBidStatus");
+        OffsetDateTime completedAt = mapper.dateTime(bidStatus, "successBidOpenDate");
+        if (completedAt == null) {
+            return null;
+        }
+
+        BidOpening bidOpening = bidOpeningRepository.findByContractInfo(contractInfo).orElse(null);
+        if (bidOpening == null) {
+            bidOpening = new BidOpening();
+            bidOpening.setContractInfo(contractInfo);
+        }
+
+        bidOpening.setCompletedAt(completedAt);
+        return bidOpeningRepository.save(bidOpening);
     }
 
     private Investor upsertInvestor(JsonNode tbmt) {

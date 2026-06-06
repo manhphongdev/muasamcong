@@ -51,6 +51,23 @@ public class TbmtPayloadMapper {
         }
     }
 
+    public Long longValue(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+
+        if (value.isNumber()) {
+            return value.asLong();
+        }
+
+        try {
+            return Long.valueOf(value.asText());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     public BigDecimal decimal(JsonNode node, String field) {
         JsonNode value = node == null ? null : node.get(field);
         if (value == null || value.isNull()) {

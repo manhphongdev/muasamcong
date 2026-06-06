@@ -53,6 +53,16 @@ public class ContractInfo extends BaseEntity {
 
     private Boolean domestic;
 
+    private Long bidPrice;
+
+    private String bidPriceUnit;
+
+    private Long bidEstimatePrice;
+
+    private Integer bidValidityPeriod;
+
+    private String bidValidityPeriodUnit;
+
     @Column(name = "is_prequalification")
     private Boolean prequalification;
 

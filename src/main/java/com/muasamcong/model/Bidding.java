@@ -63,12 +63,6 @@ public class Bidding extends BaseEntity {
     @Column(name = "bid_open_location", columnDefinition = "text")
     private String bidOpenLocation;
 
-    @Column(name = "bid_validity_period")
-    private Integer bidValidityPeriod;
-
-    @Column(name = "bid_validity_unit", length = 8)
-    private String bidValidityUnit;
-
     @Column(name = "guarantee_value", precision = 18, scale = 2)
     private BigDecimal guaranteeValue;
 
