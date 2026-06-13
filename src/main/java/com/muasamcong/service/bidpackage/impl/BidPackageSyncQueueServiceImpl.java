@@ -2,8 +2,10 @@ package com.muasamcong.service.bidpackage.impl;
 
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.TbmtIngestResult;
+import com.muasamcong.dto.biddingresult.BiddingResultSyncResult;
 import com.muasamcong.dto.bidpackage.BidPackageSyncPendingItemResult;
 import com.muasamcong.dto.bidpackage.BidPackageSyncPendingResult;
+import com.muasamcong.enums.BidStatus;
 import com.muasamcong.enums.BidPackageSyncStatus;
 import com.muasamcong.integration.portal.PortalSearchClient;
 import com.muasamcong.model.BidPackageSyncItem;
@@ -16,6 +18,7 @@ import com.muasamcong.service.bidopening.BidOpeningSyncService;
 import com.muasamcong.service.bidpackage.BidPackageSyncQueueService;
 import com.muasamcong.service.biddingresult.BiddingResultSyncService;
 import com.muasamcong.service.ingest.TbmtSyncService;
+import com.muasamcong.service.monitor.BidStatusResolver;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +41,7 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
     private final TbmtSyncService tbmtSyncService;
     private final BidOpeningSyncService bidOpeningSyncService;
     private final BiddingResultSyncService biddingResultSyncService;
+    private final BidStatusResolver bidStatusResolver;
 
     @Override
     public BidPackageSyncPendingResult syncPending(int limit) {
@@ -120,9 +124,17 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
                     .orElseGet(() -> createContract(notifyNo, procurementPlan));
 
             TbmtIngestResult ingestResult = tbmtSyncService.syncByNotifyNo(notifyNo);
-            bidOpeningSyncService.syncByNotifyNo(notifyNo);
-            biddingResultSyncService.syncByNotifyNo(notifyNo);
+            syncBidOpeningIfAvailable(notifyNo);
+            boolean hasContractorSelectionResult = syncBiddingResultIfAvailable(notifyNo);
+            BidStatus bidStatus = bidStatusResolver.resolveStatus(
+                    false,
+                    hasContractorSelectionResult,
+                    ingestResult.bidClosingTime(),
+                    ingestResult.bidOpenTime()
+            );
 
+            contract.setBidStatus(bidStatus);
+            contractRepository.save(contract);
             item.setSyncStatus(BidPackageSyncStatus.SUCCESS);
             item.setLastSyncedAt(OffsetDateTime.now());
             item.setLastError(null);
@@ -138,7 +150,6 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
             );
         } catch (Exception ex) {
             item.setSyncStatus(BidPackageSyncStatus.FAILED);
-            item.setRetryCount(item.getRetryCount() + 1);
             item.setLastError(ex.getMessage());
             syncItemRepository.save(item);
             log.warn("Sync bid package failed notifyNo={}, error={}", notifyNo, ex.getMessage());
@@ -152,6 +163,40 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
                     null
             );
         }
+    }
+
+    private void syncBidOpeningIfAvailable(String notifyNo) {
+        try {
+            bidOpeningSyncService.syncByNotifyNo(notifyNo);
+        } catch (IllegalStateException ex) {
+            if (!isUnavailableBidOpening(ex)) {
+                throw ex;
+            }
+            log.info("Skip bid opening sync notifyNo={}, reason={}", notifyNo, ex.getMessage());
+        }
+    }
+
+    private boolean syncBiddingResultIfAvailable(String notifyNo) {
+        try {
+            BiddingResultSyncResult result = biddingResultSyncService.syncByNotifyNo(notifyNo);
+            return result.hasContractorSelectionResult();
+        } catch (IllegalStateException ex) {
+            if (!isUnavailableBiddingResult(ex)) {
+                throw ex;
+            }
+            log.info("Skip bidding result sync notifyNo={}, reason={}", notifyNo, ex.getMessage());
+            return false;
+        }
+    }
+
+    private boolean isUnavailableBidOpening(IllegalStateException ex) {
+        String message = ex.getMessage();
+        return message != null && message.startsWith("Cannot resolve bid opening params:");
+    }
+
+    private boolean isUnavailableBiddingResult(IllegalStateException ex) {
+        String message = ex.getMessage();
+        return message != null && message.startsWith("Cannot resolve inputResultId:");
     }
 
     private ProcurementPlan createProcurementPlan(String planNo) {

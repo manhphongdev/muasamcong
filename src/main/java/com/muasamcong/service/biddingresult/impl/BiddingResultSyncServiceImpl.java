@@ -71,6 +71,10 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
 
         JsonNode root = portalBiddingResultClient.fetchBiddingResult(params.inputResultId());
         JsonNode main = mapper.mainPayload(root);
+        boolean hasContractorSelectionResult = main != null
+                && !main.isMissingNode()
+                && !main.isNull()
+                && main.size() > 0;
         BiddingResultSummary summary = upsertSummary(contractInfo, main);
 
         int created = 0;
@@ -118,7 +122,15 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
 
         log.info("Sync bidding result done notifyNo={}, created={}, updated={}, unchanged={}, skipped={}",
                 normalizedNotifyNo, created, updated, unchanged, skipped);
-        return new BiddingResultSyncResult(normalizedNotifyNo, summary.getId(), created, updated, unchanged, skipped);
+        return new BiddingResultSyncResult(
+                normalizedNotifyNo,
+                summary.getId(),
+                created,
+                updated,
+                unchanged,
+                skipped,
+                hasContractorSelectionResult
+        );
     }
 
     private BiddingResultSummary upsertSummary(ContractInfo contractInfo, JsonNode main) {

@@ -64,7 +64,9 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
                 contract.getId(),
                 upsertedContractInfo.contractInfo().getId(),
                 bidding.getId(),
-                upsertedContractInfo.created()
+                upsertedContractInfo.created(),
+                bidding.getBidCloseAt(),
+                bidding.getBidOpenAt()
         );
     }
 

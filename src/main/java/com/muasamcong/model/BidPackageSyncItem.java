@@ -44,9 +44,6 @@ public class BidPackageSyncItem extends BaseEntity {
     @Column(name = "sync_status", nullable = false, length = 32)
     private BidPackageSyncStatus syncStatus = BidPackageSyncStatus.PENDING;
 
-    @Column(name = "retry_count", nullable = false)
-    private int retryCount = 0;
-
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
 

@@ -6,6 +6,7 @@ public record BiddingResultSyncResult(
         int resultsCreated,
         int resultsUpdated,
         int resultsUnchanged,
-        int resultsSkipped
+        int resultsSkipped,
+        boolean hasContractorSelectionResult
 ) {
 }

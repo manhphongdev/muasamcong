@@ -18,3 +18,10 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+
+gateway:
+  url: ${GATEWAY_URL:http://127.0.0.1:18080}
+  key: ${GATEWAY_KEY:secret}
+
+storage:
+  root: ${STORAGE_ROOT:downloads}
