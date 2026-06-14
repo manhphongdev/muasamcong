@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.bidopening.BidOpeningSyncResult;
+import com.muasamcong.enums.RecordStatus;
 import com.muasamcong.integration.portal.PortalBidOpeningClient;
 import com.muasamcong.integration.portal.PortalSearchClient;
 import com.muasamcong.mapper.BidOpeningPayloadMapper;
@@ -54,11 +55,11 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
-        ContractInfo contractInfo = contractInfoRepository.findByContract(contract)
+        ContractInfo contractInfo = contractInfoRepository.findByContractAndStatus(contract, RecordStatus.ACTIVE)
                 .orElseThrow(() -> new IllegalArgumentException("ContractInfo not found: " + normalizedNotifyNo));
 
         JsonNode root = portalBidOpeningClient.fetchLotOpenDetail(params);
-        BidOpening bidOpening = upsertBidOpening(contractInfo);
+        BidOpening bidOpening = upsertBidOpening(contract);
 
         int created = 0;
         int updated = 0;
@@ -102,11 +103,11 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
         return new BidOpeningSyncResult(normalizedNotifyNo, bidOpening.getId(), created, updated, unchanged, skipped);
     }
 
-    private BidOpening upsertBidOpening(ContractInfo contractInfo) {
-        BidOpening bidOpening = bidOpeningRepository.findByContractInfo(contractInfo).orElse(null);
+    private BidOpening upsertBidOpening(Contract contract) {
+        BidOpening bidOpening = bidOpeningRepository.findByContract(contract).orElse(null);
         if (bidOpening == null) {
             bidOpening = new BidOpening();
-            bidOpening.setContractInfo(contractInfo);
+            bidOpening.setContract(contract);
         }
         bidOpening.setFetchedAt(OffsetDateTime.now());
         return bidOpeningRepository.save(bidOpening);

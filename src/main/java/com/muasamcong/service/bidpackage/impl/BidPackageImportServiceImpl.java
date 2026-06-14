@@ -90,6 +90,9 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
                 .stream()
                 .map(BidPackageSyncItem::getNotifyNo)
                 .collect(Collectors.toSet());
+        List<String> existedNotifyNos = candidatesByNotifyNo.keySet().stream()
+                .filter(existingNotifyNos::contains)
+                .toList();
 
         List<BidPackageSyncItem> newItems = new ArrayList<>();
         for (FolderCandidate candidate : candidatesByNotifyNo.values()) {
@@ -111,10 +114,13 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
 
         int created = newItems.size();
         int existed = candidatesByNotifyNo.size() - created;
+        String message = existedNotifyNos.isEmpty()
+                ? "Import completed"
+                : "Skipped existing notifyNo: " + String.join(", ", existedNotifyNos);
         log.info("Import bid packages done totalFolders={}, created={}, existed={}, invalid={}, failed={}",
                 totalFolders, created, existed, invalid, failed);
 
-        return new BidPackageFolderImportResult(totalFolders, created, existed, invalid, failed);
+        return new BidPackageFolderImportResult(totalFolders, created, existed, invalid, failed, message, existedNotifyNos);
     }
 
     private String extractNotifyNo(String folderName) {

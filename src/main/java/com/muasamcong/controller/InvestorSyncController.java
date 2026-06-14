@@ -17,6 +17,6 @@ public class InvestorSyncController {
 
     @PostMapping("/sync")
     public ApiResponse<InvestorSyncResult> syncInvestors(@RequestParam(defaultValue = "100") int pageSize) {
-        return ApiResponse.success(investorSyncService.syncInvestors(pageSize));
+        return ApiResponse.success("Investors synced", investorSyncService.syncInvestors(pageSize));
     }
 }

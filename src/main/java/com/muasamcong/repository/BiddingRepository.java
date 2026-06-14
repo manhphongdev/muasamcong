@@ -1,12 +1,12 @@
 package com.muasamcong.repository;
 
 import com.muasamcong.model.Bidding;
-import com.muasamcong.model.ContractInfo;
+import com.muasamcong.model.Contract;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface BiddingRepository extends JpaRepository<Bidding, Long> {
-    Optional<Bidding> findByContractInfo(ContractInfo contractInfo);
+    Optional<Bidding> findByContract(Contract contract);
 
-    boolean existsByContractInfo(ContractInfo contractInfo);
+    boolean existsByContract(Contract contract);
 }

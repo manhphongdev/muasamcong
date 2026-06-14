@@ -6,6 +6,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -17,7 +18,13 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @Entity
-@Table(name = "contract_info")
+@Table(
+        name = "contract_info",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uq_contract_info_contract_version",
+                columnNames = {"contract_id", "version"}
+        )
+)
 public class ContractInfo extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -26,7 +33,8 @@ public class ContractInfo extends BaseEntity {
 
     private String businessStatus;
 
-    private String latestVersionNumber;
+    @Column(name = "version", length = 16)
+    private String version;
 
     @Column(name = "bid_name", columnDefinition = "text")
     private String bidName;

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.TbmtIngestResult;
+import com.muasamcong.enums.RecordStatus;
 import com.muasamcong.integration.portal.PortalSearchClient;
 import com.muasamcong.integration.portal.PortalTbmtClient;
 import com.muasamcong.mapper.TbmtPayloadMapper;
@@ -19,6 +20,7 @@ import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.repository.InvestorRepository;
 import java.time.OffsetDateTime;
 import com.muasamcong.service.ingest.TbmtSyncService;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -55,8 +57,8 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
 
         Investor investor = upsertInvestor(tbmt);
         UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, tbmt, investor);
-        Bidding bidding = upsertBidding(upsertedContractInfo.contractInfo(), tbmt);
-        upsertBidOpening(upsertedContractInfo.contractInfo(), root);
+        Bidding bidding = upsertBidding(contract, tbmt);
+        upsertBidOpening(contract, root);
 
         log.info("Sync TBMT done notifyNo={}, created={}", normalizedNotifyNo, upsertedContractInfo.created());
         return new TbmtIngestResult(
@@ -71,15 +73,26 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
     }
 
     private UpsertedContractInfo upsertContractInfo(Contract contract, JsonNode tbmt, Investor investor) {
-        ContractInfo info = contractInfoRepository.findByContract(contract).orElse(null);
-        boolean created = info == null;
-        if (created) {
+        String version = normalizeVersion(mapper.text(tbmt, "notifyVersion"));
+        ContractInfo activeInfo = contractInfoRepository.findByContractAndStatus(contract, RecordStatus.ACTIVE).orElse(null);
+        boolean created = activeInfo == null;
+        ContractInfo info = activeInfo;
+
+        if (activeInfo != null && !Objects.equals(activeInfo.getVersion(), version)) {
+            activeInfo.setStatus(RecordStatus.INACTIVE);
+            contractInfoRepository.save(activeInfo);
+            info = contractInfoRepository.findByContractAndVersion(contract, version).orElse(null);
+            created = info == null;
+        }
+
+        if (info == null) {
             info = new ContractInfo();
             info.setContract(contract);
         }
 
+        info.setStatus(RecordStatus.ACTIVE);
         info.setBusinessStatus(mapper.text(tbmt, "status"));
-        info.setLatestVersionNumber(mapper.text(tbmt, "notifyVersion"));
+        info.setVersion(version);
         info.setBidName(mapper.text(tbmt, "bidName"));
         info.setInvestor(investor);
         info.setCapitalDetail(mapper.text(tbmt, "capitalDetail"));
@@ -102,11 +115,11 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         return new UpsertedContractInfo(contractInfoRepository.save(info), created);
     }
 
-    private Bidding upsertBidding(ContractInfo contractInfo, JsonNode tbmt) {
-        Bidding bidding = biddingRepository.findByContractInfo(contractInfo).orElse(null);
+    private Bidding upsertBidding(Contract contract, JsonNode tbmt) {
+        Bidding bidding = biddingRepository.findByContract(contract).orElse(null);
         if (bidding == null) {
             bidding = new Bidding();
-            bidding.setContractInfo(contractInfo);
+            bidding.setContract(contract);
         }
 
         bidding.setInternet(mapper.booleanValue(tbmt, "isInternet"));
@@ -128,17 +141,17 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         return biddingRepository.save(bidding);
     }
 
-    private BidOpening upsertBidOpening(ContractInfo contractInfo, JsonNode root) {
+    private BidOpening upsertBidOpening(Contract contract, JsonNode root) {
         JsonNode bidStatus = root == null ? null : root.get("bidoBidStatus");
         OffsetDateTime completedAt = mapper.dateTime(bidStatus, "successBidOpenDate");
         if (completedAt == null) {
             return null;
         }
 
-        BidOpening bidOpening = bidOpeningRepository.findByContractInfo(contractInfo).orElse(null);
+        BidOpening bidOpening = bidOpeningRepository.findByContract(contract).orElse(null);
         if (bidOpening == null) {
             bidOpening = new BidOpening();
-            bidOpening.setContractInfo(contractInfo);
+            bidOpening.setContract(contract);
         }
 
         bidOpening.setCompletedAt(completedAt);
@@ -181,6 +194,10 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
             throw new IllegalArgumentException("notifyNo is required");
         }
         return notifyNo.trim();
+    }
+
+    private String normalizeVersion(String version) {
+        return version == null || version.isBlank() ? "0" : version.trim();
     }
 
     private record UpsertedContractInfo(ContractInfo contractInfo, boolean created) {

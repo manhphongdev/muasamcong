@@ -6,6 +6,13 @@ public record BidPackageSyncPendingItemResult(
         String message,
         Long syncItemId,
         Long contractId,
-        Long contractInfoId
+        Long contractInfoId,
+        Integer documentFoundThisRun,
+        Integer documentNewThisRun,
+        Integer documentExistingThisRun,
+        Integer documentTotal,
+        Integer documentSuccess,
+        Integer documentFailed,
+        Double documentSuccessRate
 ) {
 }

@@ -7,6 +7,9 @@ public record BiddingResultSyncResult(
         int resultsUpdated,
         int resultsUnchanged,
         int resultsSkipped,
-        boolean hasContractorSelectionResult
+        boolean hasContractorSelectionResult,
+        int documentFound,
+        int documentCreated,
+        int documentExisting
 ) {
 }

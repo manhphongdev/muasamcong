@@ -17,6 +17,6 @@ public class BidOpeningSyncController {
 
     @PostMapping("/sync/{notifyNo}")
     public ApiResponse<BidOpeningSyncResult> syncByNotifyNo(@PathVariable String notifyNo) {
-        return ApiResponse.success(bidOpeningSyncService.syncByNotifyNo(notifyNo));
+        return ApiResponse.success("Bid opening synced", bidOpeningSyncService.syncByNotifyNo(notifyNo));
     }
 }

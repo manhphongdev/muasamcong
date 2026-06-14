@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.biddingresult.BiddingResultSyncResult;
+import com.muasamcong.dto.document.DocumentEnqueueStats;
 import com.muasamcong.integration.portal.PortalBiddingResultClient;
 import com.muasamcong.integration.portal.PortalSearchClient;
 import com.muasamcong.mapper.BiddingResultPayloadMapper;
@@ -12,16 +13,15 @@ import com.muasamcong.model.BiddingContractor;
 import com.muasamcong.model.BiddingResult;
 import com.muasamcong.model.BiddingResultSummary;
 import com.muasamcong.model.Contract;
-import com.muasamcong.model.ContractInfo;
 import com.muasamcong.model.Contractor;
 import com.muasamcong.repository.BidOpeningRepository;
 import com.muasamcong.repository.BiddingContractorRepository;
 import com.muasamcong.repository.BiddingResultRepository;
 import com.muasamcong.repository.BiddingResultSummaryRepository;
-import com.muasamcong.repository.ContractInfoRepository;
 import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.repository.ContractorRepository;
 import com.muasamcong.service.biddingresult.BiddingResultSyncService;
+import com.muasamcong.service.document.BiddingDocumentService;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -42,12 +42,12 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
     private final PortalBiddingResultClient portalBiddingResultClient;
     private final BiddingResultPayloadMapper mapper;
     private final ContractRepository contractRepository;
-    private final ContractInfoRepository contractInfoRepository;
     private final BidOpeningRepository bidOpeningRepository;
     private final ContractorRepository contractorRepository;
     private final BiddingContractorRepository biddingContractorRepository;
     private final BiddingResultRepository biddingResultRepository;
     private final BiddingResultSummaryRepository summaryRepository;
+    private final BiddingDocumentService biddingDocumentService;
 
     @Override
     @Transactional
@@ -64,9 +64,7 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
-        ContractInfo contractInfo = contractInfoRepository.findByContract(contract)
-                .orElseThrow(() -> new IllegalArgumentException("ContractInfo not found: " + normalizedNotifyNo));
-        BidOpening bidOpening = bidOpeningRepository.findByContractInfo(contractInfo)
+        BidOpening bidOpening = bidOpeningRepository.findByContract(contract)
                 .orElseThrow(() -> new IllegalArgumentException("BidOpening not found: " + normalizedNotifyNo));
 
         JsonNode root = portalBiddingResultClient.fetchBiddingResult(params.inputResultId());
@@ -75,7 +73,8 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
                 && !main.isMissingNode()
                 && !main.isNull()
                 && main.size() > 0;
-        BiddingResultSummary summary = upsertSummary(contractInfo, main);
+        BiddingResultSummary summary = upsertSummary(contract, main);
+        DocumentEnqueueStats enqueuedDocuments = biddingDocumentService.enqueueBiddingResultFiles(contract, main);
 
         int created = 0;
         int updated = 0;
@@ -120,8 +119,9 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             }
         }
 
-        log.info("Sync bidding result done notifyNo={}, created={}, updated={}, unchanged={}, skipped={}",
-                normalizedNotifyNo, created, updated, unchanged, skipped);
+        log.info("Sync bidding result done notifyNo={}, created={}, updated={}, unchanged={}, skipped={}, foundDocuments={}, newDocuments={}, existingDocuments={}",
+                normalizedNotifyNo, created, updated, unchanged, skipped,
+                enqueuedDocuments.found(), enqueuedDocuments.created(), enqueuedDocuments.existing());
         return new BiddingResultSyncResult(
                 normalizedNotifyNo,
                 summary.getId(),
@@ -129,15 +129,18 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
                 updated,
                 unchanged,
                 skipped,
-                hasContractorSelectionResult
+                hasContractorSelectionResult,
+                enqueuedDocuments.found(),
+                enqueuedDocuments.created(),
+                enqueuedDocuments.existing()
         );
     }
 
-    private BiddingResultSummary upsertSummary(ContractInfo contractInfo, JsonNode main) {
-        BiddingResultSummary summary = summaryRepository.findByContractInfo(contractInfo).orElse(null);
+    private BiddingResultSummary upsertSummary(Contract contract, JsonNode main) {
+        BiddingResultSummary summary = summaryRepository.findByContract(contract).orElse(null);
         if (summary == null) {
             summary = new BiddingResultSummary();
-            summary.setContractInfo(contractInfo);
+            summary.setContract(contract);
         }
 
         summary.setResultVersion(mapper.text(main, "resultVersion"));

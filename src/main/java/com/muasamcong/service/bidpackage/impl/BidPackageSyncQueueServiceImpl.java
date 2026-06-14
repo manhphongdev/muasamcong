@@ -1,12 +1,18 @@
 package com.muasamcong.service.bidpackage.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.TbmtIngestResult;
 import com.muasamcong.dto.biddingresult.BiddingResultSyncResult;
 import com.muasamcong.dto.bidpackage.BidPackageSyncPendingItemResult;
 import com.muasamcong.dto.bidpackage.BidPackageSyncPendingResult;
+import com.muasamcong.dto.document.DocumentDownloadPendingResult;
+import com.muasamcong.dto.document.DocumentEnqueueStats;
+import com.muasamcong.dto.document.DocumentSummaryResult;
 import com.muasamcong.enums.BidStatus;
 import com.muasamcong.enums.BidPackageSyncStatus;
+import com.muasamcong.integration.portal.PortalDocumentClient;
 import com.muasamcong.integration.portal.PortalSearchClient;
 import com.muasamcong.model.BidPackageSyncItem;
 import com.muasamcong.model.Contract;
@@ -17,6 +23,7 @@ import com.muasamcong.repository.ProcurementPlanRepository;
 import com.muasamcong.service.bidopening.BidOpeningSyncService;
 import com.muasamcong.service.bidpackage.BidPackageSyncQueueService;
 import com.muasamcong.service.biddingresult.BiddingResultSyncService;
+import com.muasamcong.service.document.BiddingDocumentService;
 import com.muasamcong.service.ingest.TbmtSyncService;
 import com.muasamcong.service.monitor.BidStatusResolver;
 import java.time.OffsetDateTime;
@@ -41,6 +48,8 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
     private final TbmtSyncService tbmtSyncService;
     private final BidOpeningSyncService bidOpeningSyncService;
     private final BiddingResultSyncService biddingResultSyncService;
+    private final PortalDocumentClient portalDocumentClient;
+    private final BiddingDocumentService biddingDocumentService;
     private final BidStatusResolver bidStatusResolver;
 
     @Override
@@ -125,7 +134,11 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
 
             TbmtIngestResult ingestResult = tbmtSyncService.syncByNotifyNo(notifyNo);
             syncBidOpeningIfAvailable(notifyNo);
-            boolean hasContractorSelectionResult = syncBiddingResultIfAvailable(notifyNo);
+            BiddingResultSyncResult biddingResult = syncBiddingResultIfAvailable(notifyNo);
+            boolean hasContractorSelectionResult = biddingResult != null && biddingResult.hasContractorSelectionResult();
+            DocumentEnqueueStats documentEnqueueStats = statsFrom(biddingResult).plus(syncDocumentFiles(contract, resolved.apiParams()));
+            DocumentDownloadPendingResult documentDownloadResult = biddingDocumentService.downloadPending(contract, 50);
+            DocumentSummaryResult documentSummary = biddingDocumentService.summary(contract);
             BidStatus bidStatus = bidStatusResolver.resolveStatus(
                     false,
                     hasContractorSelectionResult,
@@ -139,6 +152,12 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
             item.setLastSyncedAt(OffsetDateTime.now());
             item.setLastError(null);
             syncItemRepository.save(item);
+            log.info("Sync bid package documents notifyNo={}, total={}, success={}, failed={}, skipped={}",
+                    notifyNo,
+                    documentDownloadResult.total(),
+                    documentDownloadResult.success(),
+                    documentDownloadResult.failed(),
+                    documentDownloadResult.skipped());
 
             return new BidPackageSyncPendingItemResult(
                     notifyNo,
@@ -146,7 +165,14 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
                     "Synced",
                     item.getId(),
                     contract.getId(),
-                    ingestResult.contractInfoId()
+                    ingestResult.contractInfoId(),
+                    documentEnqueueStats.found(),
+                    documentEnqueueStats.created(),
+                    documentEnqueueStats.existing(),
+                    documentSummary.total(),
+                    documentSummary.success(),
+                    documentSummary.failed(),
+                    documentSummary.successRate()
             );
         } catch (Exception ex) {
             item.setSyncStatus(BidPackageSyncStatus.FAILED);
@@ -159,6 +185,13 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
                     false,
                     ex.getMessage(),
                     item.getId(),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
                     null,
                     null
             );
@@ -176,16 +209,56 @@ public class BidPackageSyncQueueServiceImpl implements BidPackageSyncQueueServic
         }
     }
 
-    private boolean syncBiddingResultIfAvailable(String notifyNo) {
+    private BiddingResultSyncResult syncBiddingResultIfAvailable(String notifyNo) {
         try {
-            BiddingResultSyncResult result = biddingResultSyncService.syncByNotifyNo(notifyNo);
-            return result.hasContractorSelectionResult();
+            return biddingResultSyncService.syncByNotifyNo(notifyNo);
         } catch (IllegalStateException ex) {
             if (!isUnavailableBiddingResult(ex)) {
                 throw ex;
             }
             log.info("Skip bidding result sync notifyNo={}, reason={}", notifyNo, ex.getMessage());
-            return false;
+            return null;
+        }
+    }
+
+    private DocumentEnqueueStats statsFrom(BiddingResultSyncResult result) {
+        if (result == null) {
+            return DocumentEnqueueStats.empty();
+        }
+        return new DocumentEnqueueStats(
+                result.documentFound(),
+                result.documentCreated(),
+                result.documentExisting()
+        );
+    }
+
+    private DocumentEnqueueStats syncDocumentFiles(Contract contract, BidApiParams params) {
+        return syncClarificationFiles(contract, params).plus(syncPetitionFiles(contract, params));
+    }
+
+    private DocumentEnqueueStats syncClarificationFiles(Contract contract, BidApiParams params) {
+        try {
+            JsonNode root = portalDocumentClient.fetchClarifications(contract.getNotifyNo(), params.processApply());
+            DocumentEnqueueStats stats = biddingDocumentService.enqueueClarificationFiles(contract, root);
+            log.info("Sync clarification documents done notifyNo={}, found={}, created={}, existing={}",
+                    contract.getNotifyNo(), stats.found(), stats.created(), stats.existing());
+            return stats;
+        } catch (Exception ex) {
+            log.warn("Sync clarification documents failed notifyNo={}, error={}", contract.getNotifyNo(), ex.getMessage());
+            return DocumentEnqueueStats.empty();
+        }
+    }
+
+    private DocumentEnqueueStats syncPetitionFiles(Contract contract, BidApiParams params) {
+        try {
+            JsonNode root = portalDocumentClient.fetchPetitions(contract.getNotifyNo(), params.processApply());
+            DocumentEnqueueStats stats = biddingDocumentService.enqueuePetitionFiles(contract, root);
+            log.info("Sync petition documents done notifyNo={}, found={}, created={}, existing={}",
+                    contract.getNotifyNo(), stats.found(), stats.created(), stats.existing());
+            return stats;
+        } catch (Exception ex) {
+            log.warn("Sync petition documents failed notifyNo={}, error={}", contract.getNotifyNo(), ex.getMessage());
+            return DocumentEnqueueStats.empty();
         }
     }
 

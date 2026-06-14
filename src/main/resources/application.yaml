@@ -17,7 +17,13 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
+
+logging:
+  level:
+    org.hibernate.SQL: off
+    org.hibernate.orm.jdbc.bind: off
+    org.hibernate.orm.jdbc.warn: error
 
 gateway:
   url: ${GATEWAY_URL:http://127.0.0.1:18080}

@@ -19,15 +19,15 @@ import lombok.Setter;
 @Table(
         name = "bidding_result_summary",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_bidding_result_summary_contract_info",
-                columnNames = "contract_info_id"
+                name = "uq_bidding_result_summary_contract",
+                columnNames = "contract_id"
         )
 )
 public class BiddingResultSummary extends BaseEntity {
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "contract_info_id", nullable = false)
-    private ContractInfo contractInfo;
+    @JoinColumn(name = "contract_id", nullable = false)
+    private Contract contract;
 
     @Column(name = "result_version", length = 16)
     private String resultVersion;

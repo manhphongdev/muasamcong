@@ -2,8 +2,6 @@ package com.muasamcong.model;
 
 import com.muasamcong.enums.RecordStatus;
 import jakarta.persistence.Column;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -29,8 +27,7 @@ public abstract class BaseEntity {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
+    @Column(name = "status", nullable = false)
     private RecordStatus status = RecordStatus.ACTIVE;
 
     @PrePersist

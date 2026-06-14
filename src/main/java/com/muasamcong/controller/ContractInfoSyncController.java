@@ -20,11 +20,11 @@ public class ContractInfoSyncController {
 
     @PostMapping("/sync-from-contracts")
     public ApiResponse<ContractInfoSyncResult> syncFromContracts() {
-        return ApiResponse.success(contractInfoSyncService.syncFromContracts());
+        return ApiResponse.success("Contract information synced", contractInfoSyncService.syncFromContracts());
     }
 
     @PostMapping({"/sync/{notifyNo}", "/ingest/{notifyNo}"})
     public ApiResponse<TbmtIngestResult> syncOne(@PathVariable String notifyNo) {
-        return ApiResponse.success(tbmtSyncService.syncByNotifyNo(notifyNo));
+        return ApiResponse.success("TBMT synced", tbmtSyncService.syncByNotifyNo(notifyNo));
     }
 }

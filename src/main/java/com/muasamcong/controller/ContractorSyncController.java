@@ -17,6 +17,6 @@ public class ContractorSyncController {
 
     @PostMapping("/sync")
     public ApiResponse<ContractorSyncResult> syncContractors(@RequestParam(defaultValue = "500") int pageSize) {
-        return ApiResponse.success(contractorSyncService.syncContractors(pageSize));
+        return ApiResponse.success("Contractors synced", contractorSyncService.syncContractors(pageSize));
     }
 }

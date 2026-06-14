@@ -25,27 +25,27 @@ public class BidPackageController {
     public ApiResponse<BidPackageFolderImportResult> importFolders(
             @RequestBody BidPackageFolderImportRequest request
     ) {
-        return ApiResponse.success(bidPackageImportService.importFolders(request));
+        return ApiResponse.success("Bid package folders imported", bidPackageImportService.importFolders(request));
     }
 
     @PostMapping("/sync-pending")
     public ApiResponse<BidPackageSyncPendingResult> syncPending(
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return ApiResponse.success(bidPackageSyncQueueService.syncPending(limit));
+        return ApiResponse.success("Pending bid packages synced", bidPackageSyncQueueService.syncPending(limit));
     }
 
     @PostMapping("/refresh-success")
     public ApiResponse<BidPackageSyncPendingResult> refreshSuccess(
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return ApiResponse.success(bidPackageSyncQueueService.refreshSuccess(limit));
+        return ApiResponse.success("Successful bid packages refreshed", bidPackageSyncQueueService.refreshSuccess(limit));
     }
 
     @PostMapping("/sync/{notifyNo}")
     public ApiResponse<BidPackageSyncPendingItemResult> syncByNotifyNo(
             @org.springframework.web.bind.annotation.PathVariable String notifyNo
     ) {
-        return ApiResponse.success(bidPackageSyncQueueService.syncByNotifyNo(notifyNo));
+        return ApiResponse.success("Bid package synced", bidPackageSyncQueueService.syncByNotifyNo(notifyNo));
     }
 }

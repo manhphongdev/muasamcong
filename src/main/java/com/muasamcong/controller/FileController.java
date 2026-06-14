@@ -19,6 +19,6 @@ public class FileController {
 
     @PostMapping("/download")
     public ApiResponse<FileDownloadResult> download(@Valid @RequestBody FileDownloadRequest request) {
-        return ApiResponse.success(fileService.download(request));
+        return ApiResponse.success("File downloaded", fileService.download(request));
     }
 }
