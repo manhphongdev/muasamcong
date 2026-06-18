@@ -22,6 +22,9 @@ public class Contract extends BaseEntity {
 
     private String notifyNo;
 
+    @Column(name = "bid_url", length = 2048)
+    private String bidUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "bid_status", length = 64)
     private BidStatus bidStatus;

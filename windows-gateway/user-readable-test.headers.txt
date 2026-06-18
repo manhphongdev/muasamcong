@@ -1,8 +1,0 @@
-HTTP/1.1 200 OK
-Content-Type: application/octet-stream
-Content-Disposition: attachment; filename="user-readable-test.pdf"
-Content-Length: 533495
-Date: Sat, 13 Jun 2026 18:07:27 GMT
-Connection: keep-alive
-Keep-Alive: timeout=5
-

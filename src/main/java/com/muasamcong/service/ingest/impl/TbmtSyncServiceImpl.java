@@ -56,6 +56,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         JsonNode tbmt = mapper.mainPayload(root);
 
         Investor investor = upsertInvestor(tbmt);
+        contract.setBidUrl(resolved.detailUrl());
         UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, tbmt, investor);
         Bidding bidding = upsertBidding(contract, tbmt);
         upsertBidOpening(contract, root);

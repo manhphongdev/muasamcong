@@ -20,4 +20,6 @@ public interface BiddingDocumentRepository extends JpaRepository<BiddingDocument
     List<BiddingDocument> findByDownloadStatusOrderByCreatedAtAsc(String downloadStatus);
 
     List<BiddingDocument> findByContractAndDownloadStatusOrderByCreatedAtAsc(Contract contract, String downloadStatus);
+
+    List<BiddingDocument> findByContractIn(java.util.Collection<Contract> contracts);
 }

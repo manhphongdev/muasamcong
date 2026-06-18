@@ -23,7 +23,6 @@ class BidStatusResolverTest {
                 NOW.plusDays(1),
                 NOW.minusHours(1)
         );
-
         assertThat(status).isEqualTo(BidStatus.CONTRACT_INFORMATION_AVAILABLE);
     }
 

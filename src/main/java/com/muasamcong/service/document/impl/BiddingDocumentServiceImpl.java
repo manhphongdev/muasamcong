@@ -20,11 +20,13 @@ import com.muasamcong.model.BidPetitionContent;
 import com.muasamcong.model.Contract;
 import com.muasamcong.repository.BidClarificationContentRepository;
 import com.muasamcong.repository.BidClarificationRepository;
+import com.muasamcong.repository.BidPackageSyncItemRepository;
 import com.muasamcong.repository.BidPetitionContentRepository;
 import com.muasamcong.repository.BidPetitionRepository;
 import com.muasamcong.repository.BiddingDocumentRepository;
 import com.muasamcong.service.document.BiddingDocumentService;
 import com.muasamcong.service.file.FileService;
+import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -61,8 +63,10 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
     private static final String ROLE_REQUEST = "REQUEST";
     private static final String ROLE_RESPONSE = "RESPONSE";
     private static final String ROLE_CANCEL = "CANCEL";
+    private static final String AUTO_DOWNLOAD_FOLDER = "auto-download";
 
     private final BiddingDocumentRepository repository;
+    private final BidPackageSyncItemRepository syncItemRepository;
     private final BidClarificationRepository clarificationRepository;
     private final BidClarificationContentRepository clarificationContentRepository;
     private final BidPetitionRepository petitionRepository;
@@ -136,13 +140,19 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
     @Override
     @Transactional
     public DocumentDownloadPendingResult downloadPending(int limit) {
-        return download(repository.findByDownloadStatusOrderByCreatedAtAsc(PENDING), limit);
+        return download(repository.findByDownloadStatusOrderByCreatedAtAsc(PENDING), null, limit);
     }
 
     @Override
     @Transactional
     public DocumentDownloadPendingResult downloadPending(Contract contract, int limit) {
-        return download(repository.findByContractAndDownloadStatusOrderByCreatedAtAsc(contract, PENDING), limit);
+        return download(repository.findByContractAndDownloadStatusOrderByCreatedAtAsc(contract, PENDING), null, limit);
+    }
+
+    @Override
+    @Transactional
+    public DocumentDownloadPendingResult downloadPending(Contract contract, String sourcePath, int limit) {
+        return download(repository.findByContractAndDownloadStatusOrderByCreatedAtAsc(contract, PENDING), sourcePath, limit);
     }
 
     @Override
@@ -259,7 +269,7 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
                 .toList();
     }
 
-    private DocumentDownloadPendingResult download(List<BiddingDocument> pendingDocuments, int limit) {
+    private DocumentDownloadPendingResult download(List<BiddingDocument> pendingDocuments, String sourcePath, int limit) {
         int total = 0;
         int success = 0;
         int failed = 0;
@@ -268,6 +278,9 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
         List<BiddingDocument> documents = pendingDocuments.stream()
                 .limit(Math.max(1, limit))
                 .toList();
+        if (!documents.isEmpty()) {
+            fileService.ensureGatewayReady();
+        }
 
         for (BiddingDocument document : documents) {
             total++;
@@ -287,7 +300,8 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
                 FileDownloadResult result = fileService.download(new FileDownloadRequest(
                         document.getFileExternalId(),
                         storageFileName(document),
-                        relativePath(document.getContract().getNotifyNo(), document.getFileType())
+                        autoDownloadPath(document, sourcePath),
+                        relativePath(document.getFileType())
                 ));
                 document.setStoragePath(result.storagePath());
                 document.setFileSize(result.size());
@@ -393,8 +407,20 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
         return new DocumentEnqueueStats(1, created ? 1 : 0, created ? 0 : 1);
     }
 
-    private String relativePath(String notifyNo, String fileType) {
-        return notifyNo + "/" + switch (fileType) {
+    private String autoDownloadPath(BiddingDocument document, String sourcePath) {
+        String packageRoot = hasText(sourcePath) ? sourcePath : sourcePath(document.getContract().getNotifyNo());
+        return Path.of(packageRoot).resolve(AUTO_DOWNLOAD_FOLDER).toString();
+    }
+
+    private String sourcePath(String notifyNo) {
+        return syncItemRepository.findByNotifyNo(notifyNo)
+                .map(item -> item.getSourcePath())
+                .filter(this::hasText)
+                .orElseThrow(() -> new IllegalStateException("Missing sourcePath for auto-download folder: " + notifyNo));
+    }
+
+    private String relativePath(String fileType) {
+        return switch (fileType) {
             case KQLCNT_DECISION -> "kqlcnt";
             case E_HSDT_EVAL_REPORT -> "e-hsdt-eval-report";
             case HSMT_CLARIFICATION_REQUEST, HSMT_CLARIFICATION_RESPONSE -> "clarification";

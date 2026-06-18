@@ -20,6 +20,8 @@ public interface BiddingDocumentService {
 
     DocumentDownloadPendingResult downloadPending(Contract contract, int limit);
 
+    DocumentDownloadPendingResult downloadPending(Contract contract, String sourcePath, int limit);
+
     DocumentSummaryResult summary(Contract contract);
 
     List<ClarificationResult> clarifications(Contract contract);

@@ -4,5 +4,7 @@ import com.muasamcong.dto.file.FileDownloadRequest;
 import com.muasamcong.dto.file.FileDownloadResult;
 
 public interface FileService {
+    void ensureGatewayReady();
+
     FileDownloadResult download(FileDownloadRequest request);
 }

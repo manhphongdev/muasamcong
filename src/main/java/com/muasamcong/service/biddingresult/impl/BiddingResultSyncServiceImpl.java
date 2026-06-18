@@ -64,6 +64,7 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
+        contract.setBidUrl(resolved.detailUrl());
         BidOpening bidOpening = bidOpeningRepository.findByContract(contract)
                 .orElseThrow(() -> new IllegalArgumentException("BidOpening not found: " + normalizedNotifyNo));
 

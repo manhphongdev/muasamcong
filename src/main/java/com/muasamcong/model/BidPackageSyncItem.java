@@ -17,9 +17,9 @@ import lombok.Setter;
 @NoArgsConstructor
 @Entity
 @Table(
-        name = "bid_package_sync_item",
+        name = "sync_item",
         uniqueConstraints = @UniqueConstraint(
-                name = "uq_bid_package_sync_item_notify_no",
+                name = "uq_sync_item_notify_no",
                 columnNames = "notify_no"
         )
 )
@@ -34,11 +34,11 @@ public class BidPackageSyncItem extends BaseEntity {
     @Column(name = "source_path", columnDefinition = "text")
     private String sourcePath;
 
-    @Column(name = "parent_folder_name")
-    private String parentFolderName;
+    @Column(name = "source_parent_path", columnDefinition = "text")
+    private String sourceParentPath;
 
-    @Column(name = "parent_path", columnDefinition = "text")
-    private String parentPath;
+    @Column(name = "source_order")
+    private Integer sourceOrder;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "sync_status", nullable = false, length = 32)

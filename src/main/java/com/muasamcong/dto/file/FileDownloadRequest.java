@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 public record FileDownloadRequest(
         @NotBlank String fileId,
         @NotBlank String fileName,
-        String path
+        @NotBlank String basePath,
+        String relativePath
 ) {
 }

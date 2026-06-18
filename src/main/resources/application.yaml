@@ -29,5 +29,14 @@ gateway:
   url: ${GATEWAY_URL:http://127.0.0.1:18080}
   key: ${GATEWAY_KEY:secret}
 
-storage:
-  root: ${STORAGE_ROOT:downloads}
+app:
+  cors:
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://127.0.0.1:3000,http://192.168.*.*:3000,http://172.*.*.*:3000}
+
+smb:
+  host: ${SMB_HOST:192.168.0.13}
+  port: ${SMB_PORT:445}
+  domain: ${SMB_DOMAIN:}
+  username: ${SMB_USERNAME:phongtm}
+  password: ${SMB_PASSWORD:@TMphong2026$}
+  share-folder: ${SMB_SHARE_FOLDER:Du_Lieu_chung$}

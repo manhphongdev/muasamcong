@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,9 +60,11 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
             try (Stream<Path> children = Files.list(parentPath)) {
                 List<Path> childFolders = children
                         .filter(Files::isDirectory)
+                        .sorted(Comparator.comparing(path -> naturalSortKey(path.getFileName().toString()), String.CASE_INSENSITIVE_ORDER))
                         .toList();
 
-                for (Path childFolder : childFolders) {
+                for (int i = 0; i < childFolders.size(); i++) {
+                    Path childFolder = childFolders.get(i);
                     totalFolders++;
                     String folderName = childFolder.getFileName().toString();
                     String notifyNo = extractNotifyNo(folderName);
@@ -74,8 +77,8 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
                             notifyNo,
                             folderName,
                             childFolder.toAbsolutePath().normalize().toString(),
-                            parentPath.getFileName().toString(),
-                            parentPath.toString()
+                            parentPath.toString(),
+                            i
                     ));
                 }
             } catch (IOException ex) {
@@ -104,8 +107,8 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
             item.setNotifyNo(candidate.notifyNo());
             item.setFolderName(candidate.folderName());
             item.setSourcePath(candidate.sourcePath());
-            item.setParentFolderName(candidate.parentFolderName());
-            item.setParentPath(candidate.parentPath());
+            item.setSourceParentPath(candidate.sourceParentPath());
+            item.setSourceOrder(candidate.sourceOrder());
             item.setSyncStatus(BidPackageSyncStatus.PENDING);
             newItems.add(item);
         }
@@ -128,12 +131,26 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
         return matcher.find() ? matcher.group().toUpperCase() : null;
     }
 
+    private String naturalSortKey(String value) {
+        StringBuilder key = new StringBuilder();
+        Matcher matcher = Pattern.compile("\\d+|\\D+").matcher(value);
+        while (matcher.find()) {
+            String part = matcher.group();
+            if (Character.isDigit(part.charAt(0))) {
+                key.append(String.format("%06d", part.length())).append(part);
+            } else {
+                key.append(part);
+            }
+        }
+        return key.toString();
+    }
+
     private record FolderCandidate(
             String notifyNo,
             String folderName,
             String sourcePath,
-            String parentFolderName,
-            String parentPath
+            String sourceParentPath,
+            Integer sourceOrder
     ) {
     }
 }
