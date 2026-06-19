@@ -9,8 +9,8 @@ import com.muasamcong.dto.document.DocumentEnqueueResult;
 import com.muasamcong.dto.document.DocumentEnqueueStats;
 import com.muasamcong.dto.document.DocumentSummaryResult;
 import com.muasamcong.dto.document.PetitionResult;
-import com.muasamcong.integration.portal.PortalDocumentClient;
-import com.muasamcong.integration.portal.PortalSearchClient;
+import com.muasamcong.integration.portal.PortalDocument;
+import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.model.Contract;
 import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.service.document.BiddingDocumentService;
@@ -27,8 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/documents")
 @RequiredArgsConstructor
 public class BiddingDocumentController {
-    private final PortalSearchClient portalSearchClient;
-    private final PortalDocumentClient portalDocumentClient;
+    private final PortalSearch portalSearchClient;
+    private final PortalDocument portalDocumentClient;
     private final ContractRepository contractRepository;
     private final BiddingDocumentService biddingDocumentService;
 

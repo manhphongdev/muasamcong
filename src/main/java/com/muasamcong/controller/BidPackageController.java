@@ -8,7 +8,7 @@ import com.muasamcong.dto.bidpackage.BidPackageSyncPendingItemResult;
 import com.muasamcong.dto.bidpackage.BidPackageSyncPendingResult;
 import com.muasamcong.dto.bidpackage.BidPackageTrackingDto;
 import com.muasamcong.service.bidpackage.BidPackageImportService;
-import com.muasamcong.service.bidpackage.BidPackageSyncQueueService;
+import com.muasamcong.service.bidpackage.SyncItemService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class BidPackageController {
     private final BidPackageImportService bidPackageImportService;
-    private final BidPackageSyncQueueService bidPackageSyncQueueService;
+    private final SyncItemService syncItemService;
 
 
     @PostMapping("/import-folders")
@@ -39,14 +39,14 @@ public class BidPackageController {
     public ApiResponse<BidPackageSyncPendingResult> syncPending(
             @RequestParam(defaultValue = "0") int limit
     ) {
-        return ApiResponse.success("Pending bid packages synced", bidPackageSyncQueueService.syncPending(limit));
+        return ApiResponse.success("Pending bid packages synced", syncItemService.syncPending(limit));
     }
 
     @PostMapping("/refresh-success")
     public ApiResponse<BidPackageSyncPendingResult> refreshSuccess(
             @RequestParam(defaultValue = "0") int limit
     ) {
-        return ApiResponse.success("Successful bid packages refreshed", bidPackageSyncQueueService.refreshSuccess(limit));
+        return ApiResponse.success("Successful bid packages refreshed", syncItemService.refreshSuccess(limit));
     }
 
     @GetMapping("/tracking")
@@ -60,7 +60,7 @@ public class BidPackageController {
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
         Pageable pageable = PageRequest.of(safePage, safeSize);
-        Page<BidPackageTrackingDto> trackingPage = bidPackageSyncQueueService.searchTracking(search, status, kpiFilter, pageable);
+        Page<BidPackageTrackingDto> trackingPage = syncItemService.searchTracking(search, status, kpiFilter, pageable);
         return ApiResponse.success(
                 "Bid package tracking list fetched",
                 PageResponse.from(trackingPage)
@@ -71,7 +71,7 @@ public class BidPackageController {
     public ApiResponse<BidPackageSyncPendingItemResult> syncByNotifyNo(
             @org.springframework.web.bind.annotation.PathVariable String notifyNo
     ) {
-        return ApiResponse.success("Bid package synced", bidPackageSyncQueueService.syncByNotifyNo(notifyNo));
+        return ApiResponse.success("Bid package synced", syncItemService.syncByNotifyNo(notifyNo));
     }
 
     @PostMapping("/update-folder")
@@ -79,7 +79,7 @@ public class BidPackageController {
             @RequestParam String notifyNo,
             @RequestParam(required = false) String folderPath
     ) {
-        bidPackageSyncQueueService.updateFolderPath(notifyNo, folderPath);
+        syncItemService.updateFolderPath(notifyNo, folderPath);
         return ApiResponse.success("Folder path updated", null);
     }
 

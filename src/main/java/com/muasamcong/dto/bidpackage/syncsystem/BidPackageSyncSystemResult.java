@@ -6,7 +6,6 @@ import java.util.List;
 public record BidPackageSyncSystemResult(
         Boolean enabled,
         Integer intervalMinutes,
-        Integer batchLimit,
         List<String> importRootPaths,
         OffsetDateTime lastRunAt,
         OffsetDateTime nextRunAt,
@@ -16,10 +15,7 @@ public record BidPackageSyncSystemResult(
         OffsetDateTime startedAt,
         OffsetDateTime endedAt,
         Integer totalItems,
-        Integer processedItems,
         Integer successItems,
-        Integer failedItems,
-        Integer skippedItems,
-        String currentNotifyNo
+        Integer failedItems
 ) {
 }

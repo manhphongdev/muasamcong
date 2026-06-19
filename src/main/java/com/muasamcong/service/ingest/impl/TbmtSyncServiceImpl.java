@@ -5,19 +5,21 @@ import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.TbmtIngestResult;
 import com.muasamcong.enums.RecordStatus;
-import com.muasamcong.integration.portal.PortalSearchClient;
-import com.muasamcong.integration.portal.PortalTbmtClient;
+import com.muasamcong.integration.portal.PortalSearch;
+import com.muasamcong.integration.portal.PortalTbmt;
 import com.muasamcong.mapper.TbmtPayloadMapper;
 import com.muasamcong.model.BidOpening;
 import com.muasamcong.model.Bidding;
 import com.muasamcong.model.Contract;
 import com.muasamcong.model.ContractInfo;
 import com.muasamcong.model.Investor;
+import com.muasamcong.model.ProcurementPlan;
 import com.muasamcong.repository.BidOpeningRepository;
 import com.muasamcong.repository.BiddingRepository;
 import com.muasamcong.repository.ContractInfoRepository;
 import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.repository.InvestorRepository;
+import com.muasamcong.repository.ProcurementPlanRepository;
 import java.time.OffsetDateTime;
 import com.muasamcong.service.ingest.TbmtSyncService;
 import java.util.Objects;
@@ -35,8 +37,9 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
     private final BidOpeningRepository bidOpeningRepository;
     private final BiddingRepository biddingRepository;
     private final InvestorRepository investorRepository;
-    private final PortalSearchClient portalSearchClient;
-    private final PortalTbmtClient portalTbmtClient;
+    private final ProcurementPlanRepository procurementPlanRepository;
+    private final PortalSearch portalSearchClient;
+    private final PortalTbmt portalTbmtClient;
     private final TbmtPayloadMapper mapper;
 
     @Override
@@ -56,6 +59,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         JsonNode tbmt = mapper.mainPayload(root);
 
         Investor investor = upsertInvestor(tbmt);
+        upsertProcurementPlan(contract, tbmt, investor);
         contract.setBidUrl(resolved.detailUrl());
         UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, tbmt, investor);
         Bidding bidding = upsertBidding(contract, tbmt);
@@ -179,6 +183,32 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         investor.setFetchedAt(OffsetDateTime.now());
 
         return investorRepository.save(investor);
+    }
+
+    private void upsertProcurementPlan(Contract contract, JsonNode tbmt, Investor investor) {
+        ProcurementPlan procurementPlan = contract.getProcurementPlan();
+        if (procurementPlan == null) {
+            String planNo = mapper.text(tbmt, "planNo");
+            if (planNo == null || planNo.isBlank()) {
+                return;
+            }
+            procurementPlan = procurementPlanRepository.findByPlanNo(planNo).orElseGet(() -> {
+                ProcurementPlan newPlan = new ProcurementPlan();
+                newPlan.setPlanNo(planNo);
+                return newPlan;
+            });
+            contract.setProcurementPlan(procurementPlan);
+        }
+
+        String planName = mapper.text(tbmt, "planName");
+        if (planName != null && !planName.isBlank()) {
+            procurementPlan.setPlanName(planName);
+        }
+        if (investor != null) {
+            procurementPlan.setInvestor(investor);
+        }
+        procurementPlan.setFetchedAt(OffsetDateTime.now());
+        procurementPlanRepository.save(procurementPlan);
     }
 
     private Boolean resolveMultiLot(JsonNode tbmt) {

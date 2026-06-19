@@ -1,6 +1,6 @@
 package com.muasamcong.service.bidpackage.impl;
 
-import com.muasamcong.service.bidpackage.BidPackageSyncSystemService;
+import com.muasamcong.service.bidpackage.SyncJobService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -10,12 +10,12 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class BidPackageSyncScheduler {
-    private final BidPackageSyncSystemService syncSystemService;
+    private final SyncJobService syncJobService;
 
     @Scheduled(fixedDelay = 60000)
     public void tick() {
         try {
-            syncSystemService.runScheduledIfDue();
+            syncJobService.runScheduledIfDue();
         } catch (Exception ex) {
             log.warn("Bid package sync scheduler tick failed error={}", ex.getMessage());
         }

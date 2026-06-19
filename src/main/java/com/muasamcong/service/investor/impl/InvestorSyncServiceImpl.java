@@ -2,7 +2,7 @@ package com.muasamcong.service.investor.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.investor.InvestorSyncResult;
-import com.muasamcong.integration.portal.PortalInvestorClient;
+import com.muasamcong.integration.portal.PortalInvestor;
 import com.muasamcong.mapper.InvestorPayloadMapper;
 import com.muasamcong.model.Investor;
 import com.muasamcong.repository.InvestorRepository;
@@ -28,7 +28,7 @@ public class InvestorSyncServiceImpl implements InvestorSyncService {
     private static final int DEFAULT_PAGE_SIZE = 100;
     private static final int MAX_PAGE_SIZE = 500;
 
-    private final PortalInvestorClient portalInvestorClient;
+    private final PortalInvestor portalInvestorClient;
     private final InvestorPayloadMapper mapper;
     private final InvestorRepository investorRepository;
 

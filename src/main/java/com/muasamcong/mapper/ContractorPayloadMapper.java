@@ -2,6 +2,7 @@ package com.muasamcong.mapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.enums.OperatingStatus;
+import com.muasamcong.integration.helper.PortalHelper;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -29,13 +30,7 @@ public class ContractorPayloadMapper {
     }
 
     public String text(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        if (value == null || value.isNull()) {
-            return null;
-        }
-
-        String text = value.asText();
-        return text == null || text.isBlank() ? null : text.trim();
+        return PortalHelper.text(node, field);
     }
 
     public List<String> taxCodes(JsonNode node) {

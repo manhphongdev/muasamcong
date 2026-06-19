@@ -4,7 +4,7 @@ import com.muasamcong.dto.ApiResponse;
 import com.muasamcong.dto.bidpackage.syncrootfolder.BidPackageSyncRootFolderCreateRequest;
 import com.muasamcong.dto.bidpackage.syncrootfolder.BidPackageSyncRootFolderCreateResult;
 import com.muasamcong.dto.bidpackage.syncrootfolder.BidPackageSyncRootFolderResult;
-import com.muasamcong.service.bidpackage.BidPackageSyncRootFolderService;
+import com.muasamcong.service.bidpackage.SyncSourceService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/bid-package-sync-root-folders")
 @RequiredArgsConstructor
 public class BidPackageSyncRootFolderController {
-    private final BidPackageSyncRootFolderService service;
+    private final SyncSourceService service;
 
     @GetMapping
     public ApiResponse<List<BidPackageSyncRootFolderResult>> list() {

@@ -4,9 +4,11 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.codelibs.jcifs.smb.DialectVersion;
+import org.codelibs.jcifs.smb.impl.SmbFile;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.integration.file.remote.session.CachingSessionFactory;
 import org.springframework.integration.smb.session.SmbSessionFactory;
 
 @Configuration
@@ -30,7 +32,7 @@ public class SmbConfig {
         factory.setHost(host);
         factory.setPort(port);
 
-        factory.setDomain("");
+        factory.setDomain(domain == null ? "" : domain);
 
         factory.setUsername(username);
         factory.setPassword(password);
@@ -41,5 +43,15 @@ public class SmbConfig {
         factory.setSmbMaxVersion(DialectVersion.SMB311);
 
         return factory;
+    }
+
+    @Bean
+    public CachingSessionFactory<SmbFile> cachingSessionFactory(SmbSessionFactory smbSessionFactory) {
+        CachingSessionFactory<SmbFile> cachingSessionFactory =
+                new CachingSessionFactory<>(smbSessionFactory, 10);
+
+        cachingSessionFactory.setSessionWaitTimeout(1000);
+
+        return cachingSessionFactory;
     }
 }

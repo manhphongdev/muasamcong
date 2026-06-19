@@ -5,8 +5,8 @@ import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.bidopening.BidOpeningSyncResult;
 import com.muasamcong.enums.RecordStatus;
-import com.muasamcong.integration.portal.PortalBidOpeningClient;
-import com.muasamcong.integration.portal.PortalSearchClient;
+import com.muasamcong.integration.portal.PortalBidOpening;
+import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.mapper.BidOpeningPayloadMapper;
 import com.muasamcong.model.BidOpening;
 import com.muasamcong.model.BiddingContractor;
@@ -20,8 +20,10 @@ import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.repository.ContractorRepository;
 import com.muasamcong.service.bidopening.BidOpeningSyncService;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.stream.StreamSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,8 +33,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
-    private final PortalSearchClient portalSearchClient;
-    private final PortalBidOpeningClient portalBidOpeningClient;
+    private final PortalSearch portalSearchClient;
+    private final PortalBidOpening portalBidOpeningClient;
     private final BidOpeningPayloadMapper mapper;
     private final ContractRepository contractRepository;
     private final ContractInfoRepository contractInfoRepository;
@@ -61,13 +63,17 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
 
         JsonNode root = portalBidOpeningClient.fetchLotOpenDetail(params);
         BidOpening bidOpening = upsertBidOpening(contract);
+        List<JsonNode> contractorItems = StreamSupport.stream(mapper.contractorItems(root).spliterator(), false)
+                .toList();
+        Long defaultBidGuaranteeAmount = firstLong(contractorItems, "bidGuaranteeAmount");
+        Integer defaultBidGuaranteeEff = firstInteger(contractorItems, "bidGuaranteeEff");
 
         int created = 0;
         int updated = 0;
         int unchanged = 0;
         int skipped = 0;
 
-        for (JsonNode item : mapper.contractorItems(root)) {
+        for (JsonNode item : contractorItems) {
             String contractorCode = mapper.text(item, "contractorCode");
             String contractorName = mapper.text(item, "contractorName");
             if (isBlank(contractorCode) || isBlank(contractorName)) {
@@ -86,7 +92,13 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
                 biddingContractor.setContractor(upsertedContractor.contractor());
             }
 
-            boolean changed = applyBidOpeningData(biddingContractor, item, contractInfo);
+            boolean changed = applyBidOpeningData(
+                    biddingContractor,
+                    item,
+                    contractInfo,
+                    defaultBidGuaranteeAmount,
+                    defaultBidGuaranteeEff
+            );
             if (newBiddingContractor || changed) {
                 biddingContractorRepository.save(biddingContractor);
                 if (newBiddingContractor) {
@@ -126,16 +138,45 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
         return new UpsertedContractor(contractorRepository.save(contractor), created);
     }
 
-    private boolean applyBidOpeningData(BiddingContractor biddingContractor, JsonNode item, ContractInfo contractInfo) {
+    private boolean applyBidOpeningData(
+            BiddingContractor biddingContractor,
+            JsonNode item,
+            ContractInfo contractInfo,
+            Long defaultBidGuaranteeAmount,
+            Integer defaultBidGuaranteeEff
+    ) {
         boolean changed = false;
+        Long bidGuaranteeAmount = firstNonNull(mapper.longValue(item, "bidGuaranteeAmount"), defaultBidGuaranteeAmount);
+        Integer bidGuaranteeEff = firstNonNull(mapper.integer(item, "bidGuaranteeEff"), defaultBidGuaranteeEff);
+
         changed |= setIfChanged(biddingContractor.getBidPrice(), mapper.longValue(item, "lotPrice"), biddingContractor::setBidPrice);
         changed |= setIfChanged(biddingContractor.getDiscountRate(), mapper.decimal(item, "discountPercent"), biddingContractor::setDiscountRate);
         changed |= setIfChanged(biddingContractor.getBidPriceAfterDiscount(), mapper.longValue(item, "lotFinalPrice"), biddingContractor::setBidPriceAfterDiscount);
         changed |= setIfChanged(biddingContractor.getBidValidityPeriod(), contractInfo.getBidValidityPeriod(), biddingContractor::setBidValidityPeriod);
-        changed |= setIfChanged(biddingContractor.getBidGuaranteeValue(), mapper.longValue(item, "bidGuaranteeAmount"), biddingContractor::setBidGuaranteeValue);
-        changed |= setIfChanged(biddingContractor.getBidGuaranteeValidityPeriod(), mapper.integer(item, "bidGuaranteeEff"), biddingContractor::setBidGuaranteeValidityPeriod);
+        changed |= setIfChanged(biddingContractor.getBidGuaranteeValue(), bidGuaranteeAmount, biddingContractor::setBidGuaranteeValue);
+        changed |= setIfChanged(biddingContractor.getBidGuaranteeValidityPeriod(), bidGuaranteeEff, biddingContractor::setBidGuaranteeValidityPeriod);
         changed |= setIfChanged(biddingContractor.getContractExecutionTime(), mapper.text(item, "cperiodText"), biddingContractor::setContractExecutionTime);
         return changed;
+    }
+
+    private Long firstLong(List<JsonNode> items, String field) {
+        return items.stream()
+                .map(item -> mapper.longValue(item, field))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private Integer firstInteger(List<JsonNode> items, String field) {
+        return items.stream()
+                .map(item -> mapper.integer(item, field))
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private <T> T firstNonNull(T first, T second) {
+        return first != null ? first : second;
     }
 
     private <T> boolean setIfChanged(T oldValue, T newValue, Consumer<T> setter) {

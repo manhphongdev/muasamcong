@@ -2,7 +2,7 @@ package com.muasamcong.service.contractor.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.contractor.ContractorSyncResult;
-import com.muasamcong.integration.portal.PortalContractorClient;
+import com.muasamcong.integration.portal.PortalContractor;
 import com.muasamcong.mapper.ContractorPayloadMapper;
 import com.muasamcong.model.Contractor;
 import com.muasamcong.repository.ContractorRepository;
@@ -28,7 +28,7 @@ public class ContractorSyncServiceImpl implements ContractorSyncService {
     private static final int DEFAULT_PAGE_SIZE = 500;
     private static final int MAX_PAGE_SIZE = 500;
 
-    private final PortalContractorClient portalContractorClient;
+    private final PortalContractor portalContractorClient;
     private final ContractorPayloadMapper mapper;
     private final ContractorRepository contractorRepository;
 

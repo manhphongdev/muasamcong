@@ -5,17 +5,20 @@ import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
 import com.muasamcong.dto.biddingresult.BiddingResultSyncResult;
 import com.muasamcong.dto.document.DocumentEnqueueStats;
-import com.muasamcong.integration.portal.PortalBiddingResultClient;
-import com.muasamcong.integration.portal.PortalSearchClient;
+import com.muasamcong.integration.portal.PortalBiddingResult;
+import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.mapper.BiddingResultPayloadMapper;
+import com.muasamcong.mapper.BiddingResultPayloadMapper.GoodsItem;
 import com.muasamcong.model.BidOpening;
 import com.muasamcong.model.BiddingContractor;
 import com.muasamcong.model.BiddingResult;
+import com.muasamcong.model.BiddingResultGoods;
 import com.muasamcong.model.BiddingResultSummary;
 import com.muasamcong.model.Contract;
 import com.muasamcong.model.Contractor;
 import com.muasamcong.repository.BidOpeningRepository;
 import com.muasamcong.repository.BiddingContractorRepository;
+import com.muasamcong.repository.BiddingResultGoodsRepository;
 import com.muasamcong.repository.BiddingResultRepository;
 import com.muasamcong.repository.BiddingResultSummaryRepository;
 import com.muasamcong.repository.ContractRepository;
@@ -24,8 +27,10 @@ import com.muasamcong.service.biddingresult.BiddingResultSyncService;
 import com.muasamcong.service.document.BiddingDocumentService;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -38,14 +43,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
-    private final PortalSearchClient portalSearchClient;
-    private final PortalBiddingResultClient portalBiddingResultClient;
+    private final PortalSearch portalSearchClient;
+    private final PortalBiddingResult portalBiddingResultClient;
     private final BiddingResultPayloadMapper mapper;
     private final ContractRepository contractRepository;
     private final BidOpeningRepository bidOpeningRepository;
     private final ContractorRepository contractorRepository;
     private final BiddingContractorRepository biddingContractorRepository;
     private final BiddingResultRepository biddingResultRepository;
+    private final BiddingResultGoodsRepository biddingResultGoodsRepository;
     private final BiddingResultSummaryRepository summaryRepository;
     private final BiddingDocumentService biddingDocumentService;
 
@@ -81,6 +87,7 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
         int updated = 0;
         int unchanged = 0;
         int skipped = 0;
+        Map<String, BiddingResult> resultByContractorCode = new HashMap<>();
 
         for (JsonNode item : mapper.contractorItems(main)) {
             String contractorCode = mapper.text(item, "orgCode");
@@ -109,7 +116,7 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             boolean changed = applyResultData(result, item);
             if (newResult || changed) {
                 result.setFetchedAt(OffsetDateTime.now());
-                biddingResultRepository.save(result);
+                result = biddingResultRepository.save(result);
                 if (newResult) {
                     created++;
                 } else {
@@ -118,7 +125,9 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             } else {
                 unchanged++;
             }
+            resultByContractorCode.put(normalizeCode(contractorCode), result);
         }
+        syncGoods(contract, summary, main, resultByContractorCode);
 
         log.info("Sync bidding result done notifyNo={}, created={}, updated={}, unchanged={}, skipped={}, foundDocuments={}, newDocuments={}, existingDocuments={}",
                 normalizedNotifyNo, created, updated, unchanged, skipped,
@@ -194,6 +203,58 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
         return changed;
     }
 
+    private void syncGoods(
+            Contract contract,
+            BiddingResultSummary summary,
+            JsonNode main,
+            Map<String, BiddingResult> resultByContractorCode
+    ) {
+        List<GoodsItem> goodsItems = mapper.goodsItems(main);
+        biddingResultGoodsRepository.deleteByContract(contract);
+        if (goodsItems.isEmpty()) {
+            return;
+        }
+
+        OffsetDateTime fetchedAt = OffsetDateTime.now();
+        List<BiddingResultGoods> goods = new ArrayList<>();
+        for (GoodsItem item : goodsItems) {
+            String contractorCode = mapper.text(item.goodsEntry(), "contractorCode");
+            BiddingResult result = resultByContractorCode.get(normalizeCode(contractorCode));
+            Contractor contractor = result == null || result.getBiddingContractor() == null
+                    ? null
+                    : result.getBiddingContractor().getContractor();
+
+            BiddingResultGoods row = new BiddingResultGoods();
+            row.setContract(contract);
+            row.setResultSummary(summary);
+            row.setBiddingResult(result);
+            row.setContractor(contractor);
+            row.setNotifyNo(mapper.text(main, "notifyNo"));
+            row.setBidName(mapper.text(main, "bidName"));
+            row.setLotNo(firstNonBlank(mapper.text(item.lot(), "lotNo"), mapper.text(item.goodsEntry(), "lotNo")));
+            row.setLotName(mapper.text(item.lot(), "lotName"));
+            row.setContractorCode(contractorCode);
+            row.setGoodsName(mapper.text(item.row(), "name"));
+            row.setGoodsCode(mapper.text(item.row(), "codeGood"));
+            row.setGoodsLabel(mapper.firstText(item.row(), "labelGood", "lableGood"));
+            row.setYearManufacture(mapper.firstText(item.row(), "yearManufacture", "yearGood"));
+            row.setOrigin(mapper.text(item.row(), "origin"));
+            row.setManufacturer(mapper.text(item.row(), "manufacturer"));
+            row.setTechnicalFeatures(mapper.firstText(item.row(), "feature", "technique"));
+            row.setUnit(mapper.text(item.row(), "uom"));
+            row.setQuantity(mapper.firstDecimal(item.row(), "qty", "originQty"));
+            row.setHsCode(mapper.firstText(item.row(), "hsCode", "maHs", "maHS"));
+            row.setWinningUnitPrice(mapper.firstLong(item.row(), "bidPrice"));
+            row.setAmount(mapper.firstLong(item.row(), "amount"));
+            row.setDeliveryTime(mapper.firstText(item.row(), "cPeriod", "cperiod", "deliveryTime"));
+            row.setSortOrder(item.sortOrder());
+            row.setRawItem(item.row().toString());
+            row.setFetchedAt(fetchedAt);
+            goods.add(row);
+        }
+        biddingResultGoodsRepository.saveAll(goods);
+    }
+
     private <T> boolean setIfChanged(T oldValue, T newValue, Consumer<T> setter) {
         if (Objects.equals(oldValue, newValue)) {
             return false;
@@ -207,6 +268,18 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             throw new IllegalArgumentException("notifyNo is required");
         }
         return notifyNo.trim();
+    }
+
+    private String normalizeCode(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = value.trim();
+        return normalized.regionMatches(true, 0, "vn", 0, 2) ? normalized.substring(2).toLowerCase() : normalized.toLowerCase();
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return isBlank(first) ? second : first;
     }
 
     private boolean isBlank(String value) {

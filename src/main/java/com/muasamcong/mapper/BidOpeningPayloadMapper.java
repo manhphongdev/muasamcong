@@ -1,6 +1,7 @@
 package com.muasamcong.mapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.muasamcong.integration.helper.PortalHelper;
 import java.math.BigDecimal;
 import org.springframework.stereotype.Component;
 
@@ -14,59 +15,18 @@ public class BidOpeningPayloadMapper {
     }
 
     public String text(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        if (value == null || value.isNull()) {
-            return null;
-        }
-
-        String text = value.asText();
-        return text == null || text.isBlank() ? null : text.trim();
+        return PortalHelper.text(node, field);
     }
 
     public Long longValue(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        if (value == null || value.isNull()) {
-            return null;
-        }
-
-        if (value.isNumber()) {
-            return value.asLong();
-        }
-
-        try {
-            return Long.valueOf(value.asText());
-        } catch (Exception ex) {
-            return null;
-        }
+        return PortalHelper.longValue(node, field);
     }
 
     public Integer integer(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        if (value == null || value.isNull()) {
-            return null;
-        }
-
-        if (value.isNumber()) {
-            return value.asInt();
-        }
-
-        try {
-            return Integer.valueOf(value.asText());
-        } catch (Exception ex) {
-            return null;
-        }
+        return PortalHelper.integer(node, field);
     }
 
     public BigDecimal decimal(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        if (value == null || value.isNull()) {
-            return null;
-        }
-
-        try {
-            return new BigDecimal(value.asText());
-        } catch (Exception ex) {
-            return null;
-        }
+        return PortalHelper.decimal(node, field);
     }
 }

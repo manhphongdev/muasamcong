@@ -28,6 +28,7 @@ logging:
 gateway:
   url: ${GATEWAY_URL:http://127.0.0.1:18080}
   key: ${GATEWAY_KEY:secret}
+  download-timeout-seconds: ${GATEWAY_DOWNLOAD_TIMEOUT_SECONDS:600}
 
 app:
   cors:

@@ -1,0 +1,16 @@
+{
+  "name": "muasamcong-windows-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stream-only Windows gateway for muasamcong file downloads",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js",
+    "build": "npx esbuild server.js --bundle --platform=node --format=cjs --outfile=dist/server.cjs && npx pkg dist/server.cjs --targets node18-win-x64 --output dist/gateway.exe"
+  },
+  "license": "UNLICENSED"
+}

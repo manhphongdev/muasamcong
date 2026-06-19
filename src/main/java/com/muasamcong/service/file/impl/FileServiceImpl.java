@@ -2,27 +2,27 @@ package com.muasamcong.service.file.impl;
 
 import com.muasamcong.dto.file.FileDownloadRequest;
 import com.muasamcong.dto.file.FileDownloadResult;
+import com.muasamcong.service.storage.StoredFile;
+import com.muasamcong.service.storage.SyncStorageService;
 import com.muasamcong.service.file.FileService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 @Service
+@RequiredArgsConstructor
 public class FileServiceImpl implements FileService {
     private static final int MAX_ERROR_BODY_LENGTH = 1000;
 
@@ -30,12 +30,16 @@ public class FileServiceImpl implements FileService {
             .connectTimeout(Duration.ofSeconds(20))
             .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SyncStorageService syncStorageService;
 
     @Value("${gateway.url:http://127.0.0.1:18080}")
     private String gatewayUrl;
 
     @Value("${gateway.key:secret}")
     private String gatewayKey;
+
+    @Value("${gateway.download-timeout-seconds:600}")
+    private long downloadTimeoutSeconds;
 
     @Override
     public void ensureGatewayReady() {
@@ -71,14 +75,10 @@ public class FileServiceImpl implements FileService {
     public FileDownloadResult download(FileDownloadRequest request) {
         String fileName = cleanFileName(request.fileName());
         String relativePath = cleanPath(request.relativePath());
-        Path basePath = basePath(request.basePath());
-        Path target = basePath.resolve(relativePath).resolve(fileName).normalize();
-        ensureInsideBasePath(basePath, target);
 
         try {
-            Files.createDirectories(target.getParent());
             HttpRequest httpRequest = HttpRequest.newBuilder(downloadUri(request.fileId(), fileName))
-                    .timeout(Duration.ofMinutes(3))
+                    .timeout(Duration.ofSeconds(downloadTimeoutSeconds))
                     .header("X-Api-Key", gatewayKey)
                     .GET()
                     .build();
@@ -88,24 +88,17 @@ public class FileServiceImpl implements FileService {
                 throw new IllegalStateException(gatewayErrorMessage(response));
             }
 
-            try (InputStream inputStream = response.body();
-                 OutputStream outputStream = Files.newOutputStream(
-                         target,
-                         StandardOpenOption.CREATE,
-                         StandardOpenOption.TRUNCATE_EXISTING,
-                         StandardOpenOption.WRITE
-                 )) {
-                inputStream.transferTo(outputStream);
+            StoredFile storedFile;
+            try (InputStream inputStream = response.body()) {
+                storedFile = syncStorageService.write(request.basePath(), relativePath, fileName, inputStream);
             }
-
-            long size = Files.size(target);
             return new FileDownloadResult(
                     "SUCCESS",
                     request.fileId(),
                     fileName,
                     relativePath,
-                    target.toAbsolutePath().toString(),
-                    size
+                    storedFile.path(),
+                    storedFile.size()
             );
         } catch (IOException ex) {
             throw new IllegalStateException("Cannot save file: " + safeMessage(ex), ex);
@@ -113,13 +106,6 @@ public class FileServiceImpl implements FileService {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Download interrupted", ex);
         }
-    }
-
-    private Path basePath(String path) {
-        if (!StringUtils.hasText(path)) {
-            throw new IllegalArgumentException("basePath is required");
-        }
-        return Path.of(path.trim()).toAbsolutePath().normalize();
     }
 
     private URI downloadUri(String fileId, String fileName) {
@@ -146,12 +132,6 @@ public class FileServiceImpl implements FileService {
             throw new IllegalArgumentException("Invalid path");
         }
         return cleaned;
-    }
-
-    private void ensureInsideBasePath(Path basePath, Path path) {
-        if (!path.toAbsolutePath().normalize().startsWith(basePath)) {
-            throw new IllegalArgumentException("Invalid path");
-        }
     }
 
     private String encode(String value) {

@@ -3,22 +3,23 @@ package com.muasamcong.service.bidpackage.impl;
 import com.muasamcong.dto.bidpackage.BidPackageFolderImportRequest;
 import com.muasamcong.dto.bidpackage.BidPackageFolderImportResult;
 import com.muasamcong.enums.BidPackageSyncStatus;
-import com.muasamcong.model.BidPackageSyncItem;
-import com.muasamcong.repository.BidPackageSyncItemRepository;
+import com.muasamcong.model.SyncItem;
+import com.muasamcong.model.SyncSource;
+import com.muasamcong.repository.SyncItemRepository;
+import com.muasamcong.repository.SyncSourceRepository;
 import com.muasamcong.service.bidpackage.BidPackageImportService;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import com.muasamcong.service.storage.SyncFolderEntry;
+import com.muasamcong.service.storage.SyncStorageService;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,7 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class BidPackageImportServiceImpl implements BidPackageImportService {
     private static final Pattern NOTIFY_NO_PATTERN = Pattern.compile("\\bIB\\d{10}\\b", Pattern.CASE_INSENSITIVE);
 
-    private final BidPackageSyncItemRepository repository;
+    private final SyncItemRepository syncItemRepository;
+    private final SyncSourceRepository syncSourceRepository;
+    private final SyncStorageService syncStorageService;
 
     @Override
     @Transactional
@@ -50,23 +53,18 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
                 continue;
             }
 
-            Path parentPath = Path.of(folderPath.trim()).toAbsolutePath().normalize();
-            if (!Files.isDirectory(parentPath)) {
-                failed++;
-                log.warn("Import bid packages skipped invalid parentPath={}", parentPath);
-                continue;
-            }
+            String sourceParentPath = folderPath.trim();
+            Optional<SyncSource> syncSource = syncSourceRepository.findByPath(sourceParentPath);
 
-            try (Stream<Path> children = Files.list(parentPath)) {
-                List<Path> childFolders = children
-                        .filter(Files::isDirectory)
-                        .sorted(Comparator.comparing(path -> naturalSortKey(path.getFileName().toString()), String.CASE_INSENSITIVE_ORDER))
+            try {
+                List<SyncFolderEntry> childFolders = syncStorageService.listDirectories(sourceParentPath).stream()
+                        .sorted(Comparator.comparing(entry -> naturalSortKey(entry.name()), String.CASE_INSENSITIVE_ORDER))
                         .toList();
 
                 for (int i = 0; i < childFolders.size(); i++) {
-                    Path childFolder = childFolders.get(i);
+                    SyncFolderEntry childFolder = childFolders.get(i);
                     totalFolders++;
-                    String folderName = childFolder.getFileName().toString();
+                    String folderName = childFolder.name();
                     String notifyNo = extractNotifyNo(folderName);
                     if (notifyNo == null) {
                         invalid++;
@@ -76,36 +74,38 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
                     candidatesByNotifyNo.putIfAbsent(notifyNo, new FolderCandidate(
                             notifyNo,
                             folderName,
-                            childFolder.toAbsolutePath().normalize().toString(),
-                            parentPath.toString(),
+                            childFolder.path(),
+                            sourceParentPath,
+                            syncSource.orElse(null),
                             i
                     ));
                 }
-            } catch (IOException ex) {
+            } catch (Exception ex) {
                 failed++;
-                log.warn("Import bid packages failed parentPath={}, error={}", parentPath, ex.getMessage());
+                log.warn("Import bid packages failed parentPath={}, error={}", sourceParentPath, ex.getMessage());
             }
         }
 
         Set<String> existingNotifyNos = candidatesByNotifyNo.isEmpty()
                 ? Set.of()
-                : repository.findByNotifyNoIn(candidatesByNotifyNo.keySet())
+                : syncItemRepository.findByNotifyNoIn(candidatesByNotifyNo.keySet())
                 .stream()
-                .map(BidPackageSyncItem::getNotifyNo)
+                .map(SyncItem::getNotifyNo)
                 .collect(Collectors.toSet());
         List<String> existedNotifyNos = candidatesByNotifyNo.keySet().stream()
                 .filter(existingNotifyNos::contains)
                 .toList();
 
-        List<BidPackageSyncItem> newItems = new ArrayList<>();
+        List<SyncItem> newItems = new ArrayList<>();
         for (FolderCandidate candidate : candidatesByNotifyNo.values()) {
             if (existingNotifyNos.contains(candidate.notifyNo())) {
                 continue;
             }
 
-            BidPackageSyncItem item = new BidPackageSyncItem();
+            SyncItem item = new SyncItem();
             item.setNotifyNo(candidate.notifyNo());
             item.setFolderName(candidate.folderName());
+            item.setSyncSource(candidate.syncSource());
             item.setSourcePath(candidate.sourcePath());
             item.setSourceParentPath(candidate.sourceParentPath());
             item.setSourceOrder(candidate.sourceOrder());
@@ -113,7 +113,7 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
             newItems.add(item);
         }
 
-        repository.saveAll(newItems);
+        syncItemRepository.saveAll(newItems);
 
         int created = newItems.size();
         int existed = candidatesByNotifyNo.size() - created;
@@ -150,6 +150,7 @@ public class BidPackageImportServiceImpl implements BidPackageImportService {
             String folderName,
             String sourcePath,
             String sourceParentPath,
+            SyncSource syncSource,
             Integer sourceOrder
     ) {
     }

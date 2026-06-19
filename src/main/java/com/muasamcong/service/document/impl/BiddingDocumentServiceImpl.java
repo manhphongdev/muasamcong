@@ -20,13 +20,13 @@ import com.muasamcong.model.BidPetitionContent;
 import com.muasamcong.model.Contract;
 import com.muasamcong.repository.BidClarificationContentRepository;
 import com.muasamcong.repository.BidClarificationRepository;
-import com.muasamcong.repository.BidPackageSyncItemRepository;
+import com.muasamcong.repository.SyncItemRepository;
 import com.muasamcong.repository.BidPetitionContentRepository;
 import com.muasamcong.repository.BidPetitionRepository;
 import com.muasamcong.repository.BiddingDocumentRepository;
 import com.muasamcong.service.document.BiddingDocumentService;
 import com.muasamcong.service.file.FileService;
-import java.nio.file.Path;
+import com.muasamcong.service.storage.SyncStorageService;
 import java.time.OffsetDateTime;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -63,15 +63,14 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
     private static final String ROLE_REQUEST = "REQUEST";
     private static final String ROLE_RESPONSE = "RESPONSE";
     private static final String ROLE_CANCEL = "CANCEL";
-    private static final String AUTO_DOWNLOAD_FOLDER = "auto-download";
-
     private final BiddingDocumentRepository repository;
-    private final BidPackageSyncItemRepository syncItemRepository;
+    private final SyncItemRepository syncItemRepository;
     private final BidClarificationRepository clarificationRepository;
     private final BidClarificationContentRepository clarificationContentRepository;
     private final BidPetitionRepository petitionRepository;
     private final BidPetitionContentRepository petitionContentRepository;
     private final FileService fileService;
+    private final SyncStorageService syncStorageService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
@@ -141,12 +140,6 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
     @Transactional
     public DocumentDownloadPendingResult downloadPending(int limit) {
         return download(repository.findByDownloadStatusOrderByCreatedAtAsc(PENDING), null, limit);
-    }
-
-    @Override
-    @Transactional
-    public DocumentDownloadPendingResult downloadPending(Contract contract, int limit) {
-        return download(repository.findByContractAndDownloadStatusOrderByCreatedAtAsc(contract, PENDING), null, limit);
     }
 
     @Override
@@ -409,7 +402,7 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
 
     private String autoDownloadPath(BiddingDocument document, String sourcePath) {
         String packageRoot = hasText(sourcePath) ? sourcePath : sourcePath(document.getContract().getNotifyNo());
-        return Path.of(packageRoot).resolve(AUTO_DOWNLOAD_FOLDER).toString();
+        return syncStorageService.resolveAutoDownloadPath(packageRoot);
     }
 
     private String sourcePath(String notifyNo) {
@@ -528,38 +521,6 @@ public class BiddingDocumentServiceImpl implements BiddingDocumentService {
         entity.setCatType(text(source, "catType"));
         entity.setSortOrder(sortOrder);
         clarificationContentRepository.save(entity);
-    }
-
-    private void upsertClarificationContents(BidClarification clarification, String contentJson) {
-        if (!hasText(contentJson)) {
-            return;
-        }
-        try {
-            JsonNode contents = objectMapper.readTree(contentJson);
-            if (!contents.isArray()) {
-                return;
-            }
-            int index = 0;
-            for (JsonNode content : contents) {
-                String externalId = fallback(text(content, "id"), String.valueOf(index));
-                BidClarificationContent entity = clarificationContentRepository
-                        .findByClarificationAndExternalId(clarification, externalId)
-                        .orElse(null);
-                if (entity == null) {
-                    entity = new BidClarificationContent();
-                    entity.setClarification(clarification);
-                    entity.setExternalId(externalId);
-                }
-                entity.setSubjectCode(text(content, "subjectCode"));
-                entity.setSubjectName(text(content, "subjectName"));
-                entity.setQuestion(text(content, "question"));
-                entity.setResponse(text(content, "response"));
-                entity.setCatType(text(content, "catType"));
-                entity.setSortOrder(index++);
-                clarificationContentRepository.save(entity);
-            }
-        } catch (Exception ignored) {
-        }
     }
 
     private BidPetition upsertPetition(Contract contract, String notifyVersion, JsonNode item) {

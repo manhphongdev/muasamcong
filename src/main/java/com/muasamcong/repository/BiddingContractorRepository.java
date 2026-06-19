@@ -19,4 +19,10 @@ public interface BiddingContractorRepository extends JpaRepository<BiddingContra
            "JOIN bc.bidOpening bo " +
            "WHERE bo.contract IN :contracts")
     List<BiddingContractor> findByContracts(@Param("contracts") Collection<Contract> contracts);
+
+    @Query("SELECT bc FROM BiddingContractor bc " +
+           "JOIN FETCH bc.contractor " +
+           "WHERE bc.bidOpening = :bidOpening " +
+           "ORDER BY bc.id ASC")
+    List<BiddingContractor> findByBidOpeningWithContractor(@Param("bidOpening") BidOpening bidOpening);
 }
