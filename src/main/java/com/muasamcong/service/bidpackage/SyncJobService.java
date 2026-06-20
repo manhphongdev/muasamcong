@@ -9,7 +9,5 @@ public interface SyncJobService {
 
     BidPackageSyncSystemResult updateConfig(BidPackageSyncSystemUpdateRequest request);
 
-    BidPackageSyncSystemRunResult runNow();
-
     BidPackageSyncSystemRunResult runScheduledIfDue();
 }

@@ -2,10 +2,10 @@ package com.muasamcong.service.ingest.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
-import com.muasamcong.dto.ResolvedBidDetail;
+import com.muasamcong.dto.PortalSyncContext;
 import com.muasamcong.dto.TbmtIngestResult;
+import com.muasamcong.dto.TbmtPayload;
 import com.muasamcong.enums.RecordStatus;
-import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.integration.portal.PortalTbmt;
 import com.muasamcong.mapper.TbmtPayloadMapper;
 import com.muasamcong.model.BidOpening;
@@ -38,32 +38,28 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
     private final BiddingRepository biddingRepository;
     private final InvestorRepository investorRepository;
     private final ProcurementPlanRepository procurementPlanRepository;
-    private final PortalSearch portalSearchClient;
     private final PortalTbmt portalTbmtClient;
     private final TbmtPayloadMapper mapper;
 
     @Override
     @Transactional
-    public TbmtIngestResult syncByNotifyNo(String notifyNo) {
-        String normalizedNotifyNo = normalizeNotifyNo(notifyNo);
+    public TbmtIngestResult sync(PortalSyncContext context) {
+        String normalizedNotifyNo = normalizeNotifyNo(context.notifyNo());
         log.info("Sync TBMT start notifyNo={}", normalizedNotifyNo);
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
 
-        ResolvedBidDetail resolved = portalSearchClient.resolve(normalizedNotifyNo)
-                .orElseThrow(() -> new IllegalStateException("Cannot resolve notifyNo: " + normalizedNotifyNo));
-
-        BidApiParams params = resolved.apiParams();
+        BidApiParams params = context.apiParams();
         JsonNode root = portalTbmtClient.fetchTbmt(params.notifyId());
-        JsonNode tbmt = mapper.mainPayload(root);
+        TbmtPayload payload = mapper.toPayload(root);
 
-        Investor investor = upsertInvestor(tbmt);
-        upsertProcurementPlan(contract, tbmt, investor);
-        contract.setBidUrl(resolved.detailUrl());
-        UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, tbmt, investor);
-        Bidding bidding = upsertBidding(contract, tbmt);
-        upsertBidOpening(contract, root);
+        Investor investor = upsertInvestor(payload);
+        upsertProcurementPlan(contract, payload, investor);
+        contract.setBidUrl(context.detailUrl());
+        UpsertedContractInfo upsertedContractInfo = upsertContractInfo(contract, payload, investor);
+        Bidding bidding = upsertBidding(contract, payload);
+        upsertBidOpening(contract, payload);
 
         log.info("Sync TBMT done notifyNo={}, created={}", normalizedNotifyNo, upsertedContractInfo.created());
         return new TbmtIngestResult(
@@ -77,8 +73,8 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         );
     }
 
-    private UpsertedContractInfo upsertContractInfo(Contract contract, JsonNode tbmt, Investor investor) {
-        String version = normalizeVersion(mapper.text(tbmt, "notifyVersion"));
+    private UpsertedContractInfo upsertContractInfo(Contract contract, TbmtPayload payload, Investor investor) {
+        String version = normalizeVersion(payload.notifyVersion());
         ContractInfo activeInfo = contractInfoRepository.findByContractAndStatus(contract, RecordStatus.ACTIVE).orElse(null);
         boolean created = activeInfo == null;
         ContractInfo info = activeInfo;
@@ -96,59 +92,58 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         }
 
         info.setStatus(RecordStatus.ACTIVE);
-        info.setBusinessStatus(mapper.text(tbmt, "status"));
+        info.setBusinessStatus(payload.businessStatus());
         info.setVersion(version);
-        info.setBidName(mapper.text(tbmt, "bidName"));
+        info.setBidName(payload.bidName());
         info.setInvestor(investor);
-        info.setCapitalDetail(mapper.text(tbmt, "capitalDetail"));
-        info.setInvestField(mapper.text(tbmt, "investField"));
-        info.setBidForm(mapper.text(tbmt, "bidForm"));
-        info.setContractType(mapper.text(tbmt, "contractType"));
-        info.setBidMode(mapper.text(tbmt, "bidMode"));
-        info.setContractPeriod(mapper.integer(tbmt, "contractPeriod"));
-        info.setContractPeriodUnit(mapper.text(tbmt, "contractPeriodUnit"));
-        info.setMultiLot(resolveMultiLot(tbmt));
-        info.setDomestic(mapper.booleanValue(tbmt, "isDomestic"));
-        info.setBidPrice(mapper.longValue(tbmt, "bidPrice"));
-        info.setBidPriceUnit(mapper.text(tbmt, "bidPriceUnit"));
-        info.setBidEstimatePrice(mapper.longValue(tbmt, "bidEstimatePrice"));
-        info.setBidValidityPeriod(mapper.integer(tbmt, "bidValidityPeriod"));
-        info.setBidValidityPeriodUnit(mapper.text(tbmt, "bidValidityPeriodUnit"));
-        info.setPrequalification(mapper.booleanValue(tbmt, "isPrequalification"));
+        info.setCapitalDetail(payload.capitalDetail());
+        info.setInvestField(payload.investField());
+        info.setBidForm(payload.bidForm());
+        info.setContractType(payload.contractType());
+        info.setBidMode(payload.bidMode());
+        info.setContractPeriod(payload.contractPeriod());
+        info.setContractPeriodUnit(payload.contractPeriodUnit());
+        info.setMultiLot(payload.multiLot());
+        info.setDomestic(payload.domestic());
+        info.setBidPrice(payload.bidPrice());
+        info.setBidPriceUnit(payload.bidPriceUnit());
+        info.setBidEstimatePrice(payload.bidEstimatePrice());
+        info.setBidValidityPeriod(payload.bidValidityPeriod());
+        info.setBidValidityPeriodUnit(payload.bidValidityPeriodUnit());
+        info.setPrequalification(payload.prequalification());
         info.setFetchedAt(OffsetDateTime.now());
 
         return new UpsertedContractInfo(contractInfoRepository.save(info), created);
     }
 
-    private Bidding upsertBidding(Contract contract, JsonNode tbmt) {
+    private Bidding upsertBidding(Contract contract, TbmtPayload payload) {
         Bidding bidding = biddingRepository.findByContract(contract).orElse(null);
         if (bidding == null) {
             bidding = new Bidding();
             bidding.setContract(contract);
         }
 
-        bidding.setInternet(mapper.booleanValue(tbmt, "isInternet"));
-        bidding.setSubmissionMethod(mapper.text(tbmt, "submissionMethod"));
-        bidding.setIssueLocation(mapper.text(tbmt, "issueLocation"));
-        bidding.setReceiveLocation(mapper.text(tbmt, "receiveLocation"));
-        bidding.setExecutionLocation(mapper.text(tbmt, "executionLocation"));
-        bidding.setFeeType(mapper.text(tbmt, "feeType"));
-        bidding.setFeeValue(mapper.decimal(tbmt, "feeValue"));
-        bidding.setFeeUnit(mapper.text(tbmt, "feeUnit"));
-        bidding.setBidCloseAt(mapper.dateTime(tbmt, "bidCloseDate"));
-        bidding.setBidOpenAt(mapper.dateTime(tbmt, "bidOpenDate"));
-        bidding.setBidOpenLocation(mapper.text(tbmt, "bidOpenLocation"));
-        bidding.setGuaranteeValue(mapper.decimal(tbmt, "guaranteeValue"));
-        bidding.setGuaranteeUnit(mapper.text(tbmt, "guaranteeUnit"));
-        bidding.setGuaranteeForm(mapper.text(tbmt, "guaranteeForm"));
+        bidding.setInternet(payload.internet());
+        bidding.setSubmissionMethod(payload.submissionMethod());
+        bidding.setIssueLocation(payload.issueLocation());
+        bidding.setReceiveLocation(payload.receiveLocation());
+        bidding.setExecutionLocation(payload.executionLocation());
+        bidding.setFeeType(payload.feeType());
+        bidding.setFeeValue(payload.feeValue());
+        bidding.setFeeUnit(payload.feeUnit());
+        bidding.setBidCloseAt(payload.bidCloseAt());
+        bidding.setBidOpenAt(payload.bidOpenAt());
+        bidding.setBidOpenLocation(payload.bidOpenLocation());
+        bidding.setGuaranteeValue(payload.guaranteeValue());
+        bidding.setGuaranteeUnit(payload.guaranteeUnit());
+        bidding.setGuaranteeForm(payload.guaranteeForm());
         bidding.setFetchedAt(OffsetDateTime.now());
 
         return biddingRepository.save(bidding);
     }
 
-    private BidOpening upsertBidOpening(Contract contract, JsonNode root) {
-        JsonNode bidStatus = root == null ? null : root.get("bidoBidStatus");
-        OffsetDateTime completedAt = mapper.dateTime(bidStatus, "successBidOpenDate");
+    private BidOpening upsertBidOpening(Contract contract, TbmtPayload payload) {
+        OffsetDateTime completedAt = payload.bidOpeningCompletedAt();
         if (completedAt == null) {
             return null;
         }
@@ -163,9 +158,9 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         return bidOpeningRepository.save(bidOpening);
     }
 
-    private Investor upsertInvestor(JsonNode tbmt) {
-        String investorCode = mapper.text(tbmt, "investorCode");
-        String investorName = mapper.text(tbmt, "investorName");
+    private Investor upsertInvestor(TbmtPayload payload) {
+        String investorCode = payload.investorCode();
+        String investorName = payload.investorName();
 
         if (investorCode == null || investorCode.isBlank()) {
             return null;
@@ -178,17 +173,17 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
 
         investor.setInvestorCode(investorCode);
         investor.setInvestorName(investorName == null || investorName.isBlank() ? investorCode : investorName);
-        investor.setOldInvestorName(mapper.text(tbmt, "oldInvestorName"));
-        investor.setMergeInvestorDate(mapper.dateTime(tbmt, "mergeInvestorDate"));
+        investor.setOldInvestorName(payload.oldInvestorName());
+        investor.setMergeInvestorDate(payload.mergeInvestorDate());
         investor.setFetchedAt(OffsetDateTime.now());
 
         return investorRepository.save(investor);
     }
 
-    private void upsertProcurementPlan(Contract contract, JsonNode tbmt, Investor investor) {
+    private void upsertProcurementPlan(Contract contract, TbmtPayload payload, Investor investor) {
         ProcurementPlan procurementPlan = contract.getProcurementPlan();
         if (procurementPlan == null) {
-            String planNo = mapper.text(tbmt, "planNo");
+            String planNo = payload.planNo();
             if (planNo == null || planNo.isBlank()) {
                 return;
             }
@@ -200,7 +195,7 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
             contract.setProcurementPlan(procurementPlan);
         }
 
-        String planName = mapper.text(tbmt, "planName");
+        String planName = payload.planName();
         if (planName != null && !planName.isBlank()) {
             procurementPlan.setPlanName(planName);
         }
@@ -209,15 +204,6 @@ public class TbmtSyncServiceImpl implements TbmtSyncService {
         }
         procurementPlan.setFetchedAt(OffsetDateTime.now());
         procurementPlanRepository.save(procurementPlan);
-    }
-
-    private Boolean resolveMultiLot(JsonNode tbmt) {
-        Boolean value = mapper.booleanValue(tbmt, "isMultiLot");
-        if (value != null) {
-            return value;
-        }
-        JsonNode lotList = tbmt == null ? null : tbmt.get("lotDTOList");
-        return lotList != null && lotList.isArray() && lotList.size() > 1;
     }
 
     private String normalizeNotifyNo(String notifyNo) {

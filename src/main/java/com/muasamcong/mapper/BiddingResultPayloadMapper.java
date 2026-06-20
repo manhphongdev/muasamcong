@@ -2,6 +2,9 @@ package com.muasamcong.mapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.muasamcong.dto.biddingresult.BiddingResultContractorPayload;
+import com.muasamcong.dto.biddingresult.BiddingResultGoodsPayload;
+import com.muasamcong.dto.biddingresult.BiddingResultSummaryPayload;
 import com.muasamcong.integration.helper.PortalHelper;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -37,6 +40,34 @@ public class BiddingResultPayloadMapper {
             }
         }
         return items;
+    }
+
+    public List<BiddingResultContractorPayload> contractors(JsonNode main) {
+        return contractorItems(main).stream()
+                .map(this::toContractorPayload)
+                .toList();
+    }
+
+    private BiddingResultContractorPayload toContractorPayload(JsonNode item) {
+        return BiddingResultContractorPayload.builder()
+                .contractorCode(text(item, "orgCode"))
+                .contractorName(text(item, "orgFullname"))
+                .taxCode(text(item, "taxCode"))
+                .bidResult(integer(item, "bidResult"))
+                .winningPrice(longValue(item, "bidWiningPrice"))
+                .reason(text(item, "reason"))
+                .lotPrice(longValue(item, "lotPrice"))
+                .lotFinalPrice(longValue(item, "lotFinalPrice"))
+                .adjustedPrice(longValue(item, "adjustPrice"))
+                .evalPrice(longValue(item, "evalBidPrice"))
+                .techScore(decimal(item, "techScore"))
+                .discountRate(decimal(item, "discountPercent"))
+                .contractPeriod(integer(item, "cperiod"))
+                .contractPeriodUnit(text(item, "cperiodUnit"))
+                .contractPeriodText(text(item, "cperiodText"))
+                .contractExecutionTime(text(item, "bidExecutionTime"))
+                .otherContent(text(item, "otherContent"))
+                .build();
     }
 
     public List<GoodsItem> goodsItems(JsonNode main) {
@@ -77,6 +108,53 @@ public class BiddingResultPayloadMapper {
             }
         }
         return items;
+    }
+
+    public List<BiddingResultGoodsPayload> goods(JsonNode main) {
+        return goodsItems(main).stream()
+                .map(item -> toGoodsPayload(main, item))
+                .toList();
+    }
+
+    private BiddingResultGoodsPayload toGoodsPayload(JsonNode main, GoodsItem item) {
+        return BiddingResultGoodsPayload.builder()
+                .contractorCode(text(item.goodsEntry(), "contractorCode"))
+                .notifyNo(text(main, "notifyNo"))
+                .bidName(text(main, "bidName"))
+                .lotNo(firstNonBlank(text(item.lot(), "lotNo"), text(item.goodsEntry(), "lotNo")))
+                .lotName(text(item.lot(), "lotName"))
+                .goodsName(text(item.row(), "name"))
+                .goodsCode(text(item.row(), "codeGood"))
+                .goodsLabel(firstText(item.row(), "labelGood", "lableGood"))
+                .yearManufacture(firstText(item.row(), "yearManufacture", "yearGood"))
+                .origin(text(item.row(), "origin"))
+                .manufacturer(text(item.row(), "manufacturer"))
+                .technicalFeatures(firstText(item.row(), "feature", "technique"))
+                .unit(text(item.row(), "uom"))
+                .quantity(firstDecimal(item.row(), "qty", "originQty"))
+                .hsCode(firstText(item.row(), "hsCode", "maHs", "maHS"))
+                .winningUnitPrice(firstLong(item.row(), "bidPrice"))
+                .amount(firstLong(item.row(), "amount"))
+                .deliveryTime(firstText(item.row(), "cPeriod", "cperiod", "deliveryTime"))
+                .sortOrder(item.sortOrder())
+                .rawItem(item.row().toString())
+                .build();
+    }
+
+    public BiddingResultSummaryPayload summary(JsonNode main) {
+        return BiddingResultSummaryPayload.builder()
+                .resultVersion(text(main, "resultVersion"))
+                .notifyVersion(text(main, "notifyVersion"))
+                .resultStatus(text(main, "status"))
+                .publicDate(dateTime(main, "publicDate"))
+                .decisionNo(text(main, "decisionNo"))
+                .decisionDate(dateTime(main, "decisionDate"))
+                .decisionAgency(text(main, "decisionAgency"))
+                .decisionFileId(text(main, "decisionFileId"))
+                .decisionFileName(text(main, "decisionFileName"))
+                .evalReportFileInfo(text(main, "evalReportFileInfo"))
+                .hasWinner(hasWinner(main))
+                .build();
     }
 
     public String text(JsonNode node, String field) {
@@ -165,6 +243,10 @@ public class BiddingResultPayloadMapper {
         }
         String normalized = value.trim();
         return normalized.regionMatches(true, 0, "vn", 0, 2) ? normalized.substring(2) : normalized;
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return PortalHelper.isBlank(first) ? second : first;
     }
 
     public record GoodsItem(JsonNode lot, JsonNode goodsEntry, JsonNode row, Integer sortOrder) {

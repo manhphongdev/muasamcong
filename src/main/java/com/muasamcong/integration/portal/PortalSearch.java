@@ -7,6 +7,7 @@ import static com.muasamcong.integration.helper.PortalHelper.text;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
 import com.muasamcong.dto.ResolvedBidDetail;
+import com.muasamcong.mapper.PortalSearchPayloadMapper;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ public class PortalSearch {
     );
 
     private final PortalJson jsonClient;
+    private final PortalSearchPayloadMapper mapper;
 
     public Optional<ResolvedBidDetail> resolve(String notifyNo) {
         if (notifyNo == null || notifyNo.isBlank()) {
@@ -35,22 +37,7 @@ public class PortalSearch {
             return Optional.empty();
         }
 
-        BidApiParams params = new BidApiParams(
-                text(match, "notifyNo"),
-                firstText(match, "id", "notifyId"),
-                firstText(match, "notifyId", "id"),
-                text(match, "inputResultId"),
-                text(match, "bidOpenId"),
-                text(match, "techReqId"),
-                text(match, "bidPreNotifyResultId"),
-                text(match, "bidPreOpenId"),
-                text(match, "processApply"),
-                text(match, "bidMode"),
-                text(match, "bidForm"),
-                text(match, "planNo"),
-                firstText(match, "stepCode", "step"),
-                text(match, "isInternet")
-        );
+        BidApiParams params = mapper.toBidApiParams(match);
 
         if (isBlank(params.notifyId()) || isBlank(params.notifyNo())) {
             return Optional.empty();

@@ -6,6 +6,8 @@ import com.muasamcong.dto.bidpackage.BidPackageSyncPendingResult;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemResult;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemRunResult;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemUpdateRequest;
+import com.muasamcong.dto.document.DocumentDownloadPendingResult;
+import com.muasamcong.dto.export.AutoDownloadExportResult;
 import com.muasamcong.enums.RecordStatus;
 import com.muasamcong.model.SyncJob;
 import com.muasamcong.model.SyncSource;
@@ -14,6 +16,8 @@ import com.muasamcong.repository.SyncSourceRepository;
 import com.muasamcong.service.bidpackage.BidPackageImportService;
 import com.muasamcong.service.bidpackage.SyncItemService;
 import com.muasamcong.service.bidpackage.SyncJobService;
+import com.muasamcong.service.document.DocumentDownloadWorkerService;
+import com.muasamcong.service.export.ExportWorkerService;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +44,8 @@ public class SyncJobServiceImpl implements SyncJobService {
     private final SyncSourceRepository syncSourceRepository;
     private final BidPackageImportService importService;
     private final SyncItemService syncItemService;
+    private final DocumentDownloadWorkerService documentDownloadWorkerService;
+    private final ExportWorkerService exportWorkerService;
 
     @Override
     @Transactional
@@ -65,11 +71,6 @@ public class SyncJobServiceImpl implements SyncJobService {
         syncJob.setIntervalMinutes(intervalMinutes);
         syncJob.setNextRunAt(enabled ? OffsetDateTime.now().plusMinutes(intervalMinutes) : null);
         return toResult(syncJobRepository.save(syncJob));
-    }
-
-    @Override
-    public synchronized BidPackageSyncSystemRunResult runNow() {
-        return run(false);
     }
 
     @Override
@@ -123,8 +124,10 @@ public class SyncJobServiceImpl implements SyncJobService {
 
         try {
             BidPackageFolderImportResult importResult = importActiveSyncSources(activeSyncSources);
-            BidPackageSyncPendingResult syncPendingResult = syncItemService.syncPending(0);
-            BidPackageSyncPendingResult refreshSuccessResult = syncItemService.refreshSuccess(0);
+            BidPackageSyncPendingResult syncPendingResult = syncItemService.syncPending();
+            BidPackageSyncPendingResult refreshSuccessResult = syncItemService.refreshSuccess();
+            DocumentDownloadPendingResult documentDownloadResult = documentDownloadWorkerService.downloadPending(50);
+            AutoDownloadExportResult exportResult = exportWorkerService.exportSuccessfulPackages();
 
             OffsetDateTime finishedAt = OffsetDateTime.now();
             applyProgress(syncJob, syncPendingResult, refreshSuccessResult);
@@ -135,8 +138,12 @@ public class SyncJobServiceImpl implements SyncJobService {
             syncJob.setLastError(null);
             syncJob.setRunning(false);
             syncJobRepository.save(syncJob);
-            log.info("Bid package sync system run done importCreated={}, pendingSuccess={}, refreshSuccess={}",
-                    importResult.created(), syncPendingResult.success(), refreshSuccessResult.success());
+            log.info("Bid package sync system run done importCreated={}, pendingSuccess={}, refreshSuccess={}, downloadSuccess={}, exportSuccess={}",
+                    importResult.created(),
+                    syncPendingResult.success(),
+                    refreshSuccessResult.success(),
+                    documentDownloadResult.success(),
+                    exportResult.success());
 
             return new BidPackageSyncSystemRunResult(
                     false,
@@ -144,6 +151,8 @@ public class SyncJobServiceImpl implements SyncJobService {
                     importResult,
                     syncPendingResult,
                     refreshSuccessResult,
+                    documentDownloadResult,
+                    exportResult,
                     toResult(syncJob)
             );
         } catch (Exception ex) {
@@ -161,7 +170,7 @@ public class SyncJobServiceImpl implements SyncJobService {
     }
 
     private BidPackageSyncSystemRunResult skipped(SyncJob syncJob, String message) {
-        return new BidPackageSyncSystemRunResult(true, message, null, null, null, toResult(syncJob));
+        return new BidPackageSyncSystemRunResult(true, message, null, null, null, null, null, toResult(syncJob));
     }
 
     private SyncJob syncJob() {

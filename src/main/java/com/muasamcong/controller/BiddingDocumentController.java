@@ -14,6 +14,7 @@ import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.model.Contract;
 import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.service.document.BiddingDocumentService;
+import com.muasamcong.service.document.DocumentDownloadWorkerService;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +32,7 @@ public class BiddingDocumentController {
     private final PortalDocument portalDocumentClient;
     private final ContractRepository contractRepository;
     private final BiddingDocumentService biddingDocumentService;
+    private final DocumentDownloadWorkerService documentDownloadWorkerService;
 
     @PostMapping("/sync-clarifications/{notifyNo}")
     public ApiResponse<DocumentEnqueueResult> syncClarifications(@PathVariable String notifyNo) {
@@ -52,7 +54,7 @@ public class BiddingDocumentController {
 
     @PostMapping("/download-pending")
     public ApiResponse<DocumentDownloadPendingResult> downloadPending(@RequestParam(defaultValue = "10") int limit) {
-        return ApiResponse.success("Pending documents downloaded", biddingDocumentService.downloadPending(limit));
+        return ApiResponse.success("Pending documents downloaded", documentDownloadWorkerService.downloadPending(limit));
     }
 
     @GetMapping("/summary/{notifyNo}")

@@ -7,9 +7,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface SyncItemService {
-    BidPackageSyncPendingResult syncPending(int limit);
+    BidPackageSyncPendingResult syncPending();
 
-    BidPackageSyncPendingResult refreshSuccess(int limit);
+    BidPackageSyncPendingResult refreshSuccess();
 
     BidPackageSyncPendingItemResult syncByNotifyNo(String notifyNo);
 

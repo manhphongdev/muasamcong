@@ -2,13 +2,11 @@ package com.muasamcong.controller;
 
 import com.muasamcong.dto.ApiResponse;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemResult;
-import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemRunResult;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemUpdateRequest;
 import com.muasamcong.service.bidpackage.SyncJobService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,9 +33,4 @@ public class BidPackageSyncSystemController {
         return ApiResponse.success("Bid package sync system config updated", service.updateConfig(request));
     }
 
-    @PostMapping("/run-now")
-    public ApiResponse<BidPackageSyncSystemRunResult> runNow() {
-        log.info("Run bid package sync system now");
-        return ApiResponse.success("Bid package sync system run completed", service.runNow());
-    }
 }

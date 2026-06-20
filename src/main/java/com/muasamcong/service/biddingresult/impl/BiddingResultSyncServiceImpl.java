@@ -2,13 +2,14 @@ package com.muasamcong.service.biddingresult.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
-import com.muasamcong.dto.ResolvedBidDetail;
+import com.muasamcong.dto.PortalSyncContext;
+import com.muasamcong.dto.biddingresult.BiddingResultContractorPayload;
+import com.muasamcong.dto.biddingresult.BiddingResultGoodsPayload;
+import com.muasamcong.dto.biddingresult.BiddingResultSummaryPayload;
 import com.muasamcong.dto.biddingresult.BiddingResultSyncResult;
 import com.muasamcong.dto.document.DocumentEnqueueStats;
 import com.muasamcong.integration.portal.PortalBiddingResult;
-import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.mapper.BiddingResultPayloadMapper;
-import com.muasamcong.mapper.BiddingResultPayloadMapper.GoodsItem;
 import com.muasamcong.model.BidOpening;
 import com.muasamcong.model.BiddingContractor;
 import com.muasamcong.model.BiddingResult;
@@ -43,7 +44,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
-    private final PortalSearch portalSearchClient;
     private final PortalBiddingResult portalBiddingResultClient;
     private final BiddingResultPayloadMapper mapper;
     private final ContractRepository contractRepository;
@@ -57,20 +57,18 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
 
     @Override
     @Transactional
-    public BiddingResultSyncResult syncByNotifyNo(String notifyNo) {
-        String normalizedNotifyNo = normalizeNotifyNo(notifyNo);
+    public BiddingResultSyncResult sync(PortalSyncContext context) {
+        String normalizedNotifyNo = normalizeNotifyNo(context.notifyNo());
         log.info("Sync bidding result start notifyNo={}", normalizedNotifyNo);
 
-        ResolvedBidDetail resolved = portalSearchClient.resolve(normalizedNotifyNo)
-                .orElseThrow(() -> new IllegalStateException("Cannot resolve notifyNo: " + normalizedNotifyNo));
-        BidApiParams params = resolved.apiParams();
+        BidApiParams params = context.apiParams();
         if (isBlank(params.inputResultId())) {
             throw new IllegalStateException("Cannot resolve inputResultId: " + normalizedNotifyNo);
         }
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
-        contract.setBidUrl(resolved.detailUrl());
+        contract.setBidUrl(context.detailUrl());
         BidOpening bidOpening = bidOpeningRepository.findByContract(contract)
                 .orElseThrow(() -> new IllegalArgumentException("BidOpening not found: " + normalizedNotifyNo));
 
@@ -89,15 +87,15 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
         int skipped = 0;
         Map<String, BiddingResult> resultByContractorCode = new HashMap<>();
 
-        for (JsonNode item : mapper.contractorItems(main)) {
-            String contractorCode = mapper.text(item, "orgCode");
-            String contractorName = mapper.text(item, "orgFullname");
+        for (BiddingResultContractorPayload contractorPayload : mapper.contractors(main)) {
+            String contractorCode = contractorPayload.contractorCode();
+            String contractorName = contractorPayload.contractorName();
             if (isBlank(contractorCode) || isBlank(contractorName)) {
                 skipped++;
                 continue;
             }
 
-            Contractor contractor = upsertContractor(contractorCode, contractorName, mapper.text(item, "taxCode"));
+            Contractor contractor = upsertContractor(contractorCode, contractorName, contractorPayload.taxCode());
             BiddingContractor biddingContractor = biddingContractorRepository
                     .findByBidOpeningAndContractor(bidOpening, contractor)
                     .orElse(null);
@@ -113,7 +111,7 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
                 result.setBiddingContractor(biddingContractor);
             }
 
-            boolean changed = applyResultData(result, item);
+            boolean changed = applyResultData(result, contractorPayload);
             if (newResult || changed) {
                 result.setFetchedAt(OffsetDateTime.now());
                 result = biddingResultRepository.save(result);
@@ -153,17 +151,18 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             summary.setContract(contract);
         }
 
-        summary.setResultVersion(mapper.text(main, "resultVersion"));
-        summary.setNotifyVersion(mapper.text(main, "notifyVersion"));
-        summary.setResultStatus(mapper.text(main, "status"));
-        summary.setPublicDate(mapper.dateTime(main, "publicDate"));
-        summary.setDecisionNo(mapper.text(main, "decisionNo"));
-        summary.setDecisionDate(mapper.dateTime(main, "decisionDate"));
-        summary.setDecisionAgency(mapper.text(main, "decisionAgency"));
-        summary.setDecisionFileId(mapper.text(main, "decisionFileId"));
-        summary.setDecisionFileName(mapper.text(main, "decisionFileName"));
-        summary.setEvalReportFileInfo(mapper.text(main, "evalReportFileInfo"));
-        summary.setHasWinner(mapper.hasWinner(main));
+        BiddingResultSummaryPayload payload = mapper.summary(main);
+        summary.setResultVersion(payload.resultVersion());
+        summary.setNotifyVersion(payload.notifyVersion());
+        summary.setResultStatus(payload.resultStatus());
+        summary.setPublicDate(payload.publicDate());
+        summary.setDecisionNo(payload.decisionNo());
+        summary.setDecisionDate(payload.decisionDate());
+        summary.setDecisionAgency(payload.decisionAgency());
+        summary.setDecisionFileId(payload.decisionFileId());
+        summary.setDecisionFileName(payload.decisionFileName());
+        summary.setEvalReportFileInfo(payload.evalReportFileInfo());
+        summary.setHasWinner(payload.hasWinner());
         summary.setFetchedAt(OffsetDateTime.now());
         return summaryRepository.save(summary);
     }
@@ -184,22 +183,22 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
         return contractorRepository.save(contractor);
     }
 
-    private boolean applyResultData(BiddingResult result, JsonNode item) {
+    private boolean applyResultData(BiddingResult result, BiddingResultContractorPayload payload) {
         boolean changed = false;
-        changed |= setIfChanged(result.getBidResult(), mapper.integer(item, "bidResult"), result::setBidResult);
-        changed |= setIfChanged(result.getWinningPrice(), mapper.longValue(item, "bidWiningPrice"), result::setWinningPrice);
-        changed |= setIfChanged(result.getReason(), mapper.text(item, "reason"), result::setReason);
-        changed |= setIfChanged(result.getLotPrice(), mapper.longValue(item, "lotPrice"), result::setLotPrice);
-        changed |= setIfChanged(result.getLotFinalPrice(), mapper.longValue(item, "lotFinalPrice"), result::setLotFinalPrice);
-        changed |= setIfChanged(result.getAdjustedPrice(), mapper.longValue(item, "adjustPrice"), result::setAdjustedPrice);
-        changed |= setIfChanged(result.getEvalPrice(), mapper.longValue(item, "evalBidPrice"), result::setEvalPrice);
-        changed |= setIfChanged(result.getTechScore(), mapper.decimal(item, "techScore"), result::setTechScore);
-        changed |= setIfChanged(result.getDiscountRate(), mapper.decimal(item, "discountPercent"), result::setDiscountRate);
-        changed |= setIfChanged(result.getContractPeriod(), mapper.integer(item, "cperiod"), result::setContractPeriod);
-        changed |= setIfChanged(result.getContractPeriodUnit(), mapper.text(item, "cperiodUnit"), result::setContractPeriodUnit);
-        changed |= setIfChanged(result.getContractPeriodText(), mapper.text(item, "cperiodText"), result::setContractPeriodText);
-        changed |= setIfChanged(result.getContractExecutionTime(), mapper.text(item, "bidExecutionTime"), result::setContractExecutionTime);
-        changed |= setIfChanged(result.getOtherContent(), mapper.text(item, "otherContent"), result::setOtherContent);
+        changed |= setIfChanged(result.getBidResult(), payload.bidResult(), result::setBidResult);
+        changed |= setIfChanged(result.getWinningPrice(), payload.winningPrice(), result::setWinningPrice);
+        changed |= setIfChanged(result.getReason(), payload.reason(), result::setReason);
+        changed |= setIfChanged(result.getLotPrice(), payload.lotPrice(), result::setLotPrice);
+        changed |= setIfChanged(result.getLotFinalPrice(), payload.lotFinalPrice(), result::setLotFinalPrice);
+        changed |= setIfChanged(result.getAdjustedPrice(), payload.adjustedPrice(), result::setAdjustedPrice);
+        changed |= setIfChanged(result.getEvalPrice(), payload.evalPrice(), result::setEvalPrice);
+        changed |= setIfChanged(result.getTechScore(), payload.techScore(), result::setTechScore);
+        changed |= setIfChanged(result.getDiscountRate(), payload.discountRate(), result::setDiscountRate);
+        changed |= setIfChanged(result.getContractPeriod(), payload.contractPeriod(), result::setContractPeriod);
+        changed |= setIfChanged(result.getContractPeriodUnit(), payload.contractPeriodUnit(), result::setContractPeriodUnit);
+        changed |= setIfChanged(result.getContractPeriodText(), payload.contractPeriodText(), result::setContractPeriodText);
+        changed |= setIfChanged(result.getContractExecutionTime(), payload.contractExecutionTime(), result::setContractExecutionTime);
+        changed |= setIfChanged(result.getOtherContent(), payload.otherContent(), result::setOtherContent);
         return changed;
     }
 
@@ -209,7 +208,7 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             JsonNode main,
             Map<String, BiddingResult> resultByContractorCode
     ) {
-        List<GoodsItem> goodsItems = mapper.goodsItems(main);
+        List<BiddingResultGoodsPayload> goodsItems = mapper.goods(main);
         biddingResultGoodsRepository.deleteByContract(contract);
         if (goodsItems.isEmpty()) {
             return;
@@ -217,8 +216,8 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
 
         OffsetDateTime fetchedAt = OffsetDateTime.now();
         List<BiddingResultGoods> goods = new ArrayList<>();
-        for (GoodsItem item : goodsItems) {
-            String contractorCode = mapper.text(item.goodsEntry(), "contractorCode");
+        for (BiddingResultGoodsPayload item : goodsItems) {
+            String contractorCode = item.contractorCode();
             BiddingResult result = resultByContractorCode.get(normalizeCode(contractorCode));
             Contractor contractor = result == null || result.getBiddingContractor() == null
                     ? null
@@ -229,26 +228,26 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
             row.setResultSummary(summary);
             row.setBiddingResult(result);
             row.setContractor(contractor);
-            row.setNotifyNo(mapper.text(main, "notifyNo"));
-            row.setBidName(mapper.text(main, "bidName"));
-            row.setLotNo(firstNonBlank(mapper.text(item.lot(), "lotNo"), mapper.text(item.goodsEntry(), "lotNo")));
-            row.setLotName(mapper.text(item.lot(), "lotName"));
+            row.setNotifyNo(item.notifyNo());
+            row.setBidName(item.bidName());
+            row.setLotNo(item.lotNo());
+            row.setLotName(item.lotName());
             row.setContractorCode(contractorCode);
-            row.setGoodsName(mapper.text(item.row(), "name"));
-            row.setGoodsCode(mapper.text(item.row(), "codeGood"));
-            row.setGoodsLabel(mapper.firstText(item.row(), "labelGood", "lableGood"));
-            row.setYearManufacture(mapper.firstText(item.row(), "yearManufacture", "yearGood"));
-            row.setOrigin(mapper.text(item.row(), "origin"));
-            row.setManufacturer(mapper.text(item.row(), "manufacturer"));
-            row.setTechnicalFeatures(mapper.firstText(item.row(), "feature", "technique"));
-            row.setUnit(mapper.text(item.row(), "uom"));
-            row.setQuantity(mapper.firstDecimal(item.row(), "qty", "originQty"));
-            row.setHsCode(mapper.firstText(item.row(), "hsCode", "maHs", "maHS"));
-            row.setWinningUnitPrice(mapper.firstLong(item.row(), "bidPrice"));
-            row.setAmount(mapper.firstLong(item.row(), "amount"));
-            row.setDeliveryTime(mapper.firstText(item.row(), "cPeriod", "cperiod", "deliveryTime"));
+            row.setGoodsName(item.goodsName());
+            row.setGoodsCode(item.goodsCode());
+            row.setGoodsLabel(item.goodsLabel());
+            row.setYearManufacture(item.yearManufacture());
+            row.setOrigin(item.origin());
+            row.setManufacturer(item.manufacturer());
+            row.setTechnicalFeatures(item.technicalFeatures());
+            row.setUnit(item.unit());
+            row.setQuantity(item.quantity());
+            row.setHsCode(item.hsCode());
+            row.setWinningUnitPrice(item.winningUnitPrice());
+            row.setAmount(item.amount());
+            row.setDeliveryTime(item.deliveryTime());
             row.setSortOrder(item.sortOrder());
-            row.setRawItem(item.row().toString());
+            row.setRawItem(item.rawItem());
             row.setFetchedAt(fetchedAt);
             goods.add(row);
         }
@@ -276,10 +275,6 @@ public class BiddingResultSyncServiceImpl implements BiddingResultSyncService {
         }
         String normalized = value.trim();
         return normalized.regionMatches(true, 0, "vn", 0, 2) ? normalized.substring(2).toLowerCase() : normalized.toLowerCase();
-    }
-
-    private String firstNonBlank(String first, String second) {
-        return isBlank(first) ? second : first;
     }
 
     private boolean isBlank(String value) {

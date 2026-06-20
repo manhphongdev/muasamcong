@@ -36,17 +36,13 @@ public class BidPackageController {
     }
 
     @PostMapping("/sync-pending")
-    public ApiResponse<BidPackageSyncPendingResult> syncPending(
-            @RequestParam(defaultValue = "0") int limit
-    ) {
-        return ApiResponse.success("Pending bid packages synced", syncItemService.syncPending(limit));
+    public ApiResponse<BidPackageSyncPendingResult> syncPending() {
+        return ApiResponse.success("Pending bid packages synced", syncItemService.syncPending());
     }
 
     @PostMapping("/refresh-success")
-    public ApiResponse<BidPackageSyncPendingResult> refreshSuccess(
-            @RequestParam(defaultValue = "0") int limit
-    ) {
-        return ApiResponse.success("Successful bid packages refreshed", syncItemService.refreshSuccess(limit));
+    public ApiResponse<BidPackageSyncPendingResult> refreshSuccess() {
+        return ApiResponse.success("Successful bid packages refreshed", syncItemService.refreshSuccess());
     }
 
     @GetMapping("/tracking")
@@ -83,25 +79,4 @@ public class BidPackageController {
         return ApiResponse.success("Folder path updated", null);
     }
 
-    @PostMapping("/open-folder")
-    public ApiResponse<Void> openFolder(
-            @RequestParam String folderPath
-    ) {
-        if (folderPath == null || folderPath.trim().isEmpty()) {
-            return ApiResponse.error("Đường dẫn thư mục trống!", null);
-        }
-        try {
-            String os = System.getProperty("os.name").toLowerCase();
-            if (os.contains("win")) {
-                new ProcessBuilder("cmd.exe", "/c", "start", "", folderPath.trim()).start();
-            } else if (os.contains("mac")) {
-                new ProcessBuilder("open", folderPath.trim()).start();
-            } else {
-                new ProcessBuilder("xdg-open", folderPath.trim()).start();
-            }
-            return ApiResponse.success("Đã mở thư mục thành công!", null);
-        } catch (Exception e) {
-            return ApiResponse.error("Không thể mở thư mục: " + e.getMessage(), null);
-        }
-    }
 }

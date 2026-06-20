@@ -2,11 +2,11 @@ package com.muasamcong.service.bidopening.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.muasamcong.dto.BidApiParams;
-import com.muasamcong.dto.ResolvedBidDetail;
+import com.muasamcong.dto.PortalSyncContext;
+import com.muasamcong.dto.bidopening.BidOpeningContractorPayload;
 import com.muasamcong.dto.bidopening.BidOpeningSyncResult;
 import com.muasamcong.enums.RecordStatus;
 import com.muasamcong.integration.portal.PortalBidOpening;
-import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.mapper.BidOpeningPayloadMapper;
 import com.muasamcong.model.BidOpening;
 import com.muasamcong.model.BiddingContractor;
@@ -23,7 +23,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
-import java.util.stream.StreamSupport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,7 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
-    private final PortalSearch portalSearchClient;
     private final PortalBidOpening portalBidOpeningClient;
     private final BidOpeningPayloadMapper mapper;
     private final ContractRepository contractRepository;
@@ -44,38 +42,35 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
 
     @Override
     @Transactional
-    public BidOpeningSyncResult syncByNotifyNo(String notifyNo) {
-        String normalizedNotifyNo = normalizeNotifyNo(notifyNo);
+    public BidOpeningSyncResult sync(PortalSyncContext context) {
+        String normalizedNotifyNo = normalizeNotifyNo(context.notifyNo());
         log.info("Sync bid opening start notifyNo={}", normalizedNotifyNo);
 
-        ResolvedBidDetail resolved = portalSearchClient.resolve(normalizedNotifyNo)
-                .orElseThrow(() -> new IllegalStateException("Cannot resolve notifyNo: " + normalizedNotifyNo));
-        BidApiParams params = resolved.apiParams();
+        BidApiParams params = context.apiParams();
         if (isBlank(params.notifyId()) || isBlank(params.bidOpenId()) && isBlank(params.bidPreOpenId())) {
             throw new IllegalStateException("Cannot resolve bid opening params: " + normalizedNotifyNo);
         }
 
         Contract contract = contractRepository.findByNotifyNo(normalizedNotifyNo)
                 .orElseThrow(() -> new IllegalArgumentException("Contract not found: " + normalizedNotifyNo));
-        contract.setBidUrl(resolved.detailUrl());
+        contract.setBidUrl(context.detailUrl());
         ContractInfo contractInfo = contractInfoRepository.findByContractAndStatus(contract, RecordStatus.ACTIVE)
                 .orElseThrow(() -> new IllegalArgumentException("ContractInfo not found: " + normalizedNotifyNo));
 
         JsonNode root = portalBidOpeningClient.fetchLotOpenDetail(params);
         BidOpening bidOpening = upsertBidOpening(contract);
-        List<JsonNode> contractorItems = StreamSupport.stream(mapper.contractorItems(root).spliterator(), false)
-                .toList();
-        Long defaultBidGuaranteeAmount = firstLong(contractorItems, "bidGuaranteeAmount");
-        Integer defaultBidGuaranteeEff = firstInteger(contractorItems, "bidGuaranteeEff");
+        List<BidOpeningContractorPayload> contractors = mapper.contractors(root);
+        Long defaultBidGuaranteeAmount = firstBidGuaranteeAmount(contractors);
+        Integer defaultBidGuaranteeEff = firstBidGuaranteeValidityPeriod(contractors);
 
         int created = 0;
         int updated = 0;
         int unchanged = 0;
         int skipped = 0;
 
-        for (JsonNode item : contractorItems) {
-            String contractorCode = mapper.text(item, "contractorCode");
-            String contractorName = mapper.text(item, "contractorName");
+        for (BidOpeningContractorPayload contractorPayload : contractors) {
+            String contractorCode = contractorPayload.contractorCode();
+            String contractorName = contractorPayload.contractorName();
             if (isBlank(contractorCode) || isBlank(contractorName)) {
                 skipped++;
                 continue;
@@ -94,7 +89,7 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
 
             boolean changed = applyBidOpeningData(
                     biddingContractor,
-                    item,
+                    contractorPayload,
                     contractInfo,
                     defaultBidGuaranteeAmount,
                     defaultBidGuaranteeEff
@@ -140,36 +135,36 @@ public class BidOpeningSyncServiceImpl implements BidOpeningSyncService {
 
     private boolean applyBidOpeningData(
             BiddingContractor biddingContractor,
-            JsonNode item,
+            BidOpeningContractorPayload contractorPayload,
             ContractInfo contractInfo,
             Long defaultBidGuaranteeAmount,
             Integer defaultBidGuaranteeEff
     ) {
         boolean changed = false;
-        Long bidGuaranteeAmount = firstNonNull(mapper.longValue(item, "bidGuaranteeAmount"), defaultBidGuaranteeAmount);
-        Integer bidGuaranteeEff = firstNonNull(mapper.integer(item, "bidGuaranteeEff"), defaultBidGuaranteeEff);
+        Long bidGuaranteeAmount = firstNonNull(contractorPayload.bidGuaranteeAmount(), defaultBidGuaranteeAmount);
+        Integer bidGuaranteeEff = firstNonNull(contractorPayload.bidGuaranteeValidityPeriod(), defaultBidGuaranteeEff);
 
-        changed |= setIfChanged(biddingContractor.getBidPrice(), mapper.longValue(item, "lotPrice"), biddingContractor::setBidPrice);
-        changed |= setIfChanged(biddingContractor.getDiscountRate(), mapper.decimal(item, "discountPercent"), biddingContractor::setDiscountRate);
-        changed |= setIfChanged(biddingContractor.getBidPriceAfterDiscount(), mapper.longValue(item, "lotFinalPrice"), biddingContractor::setBidPriceAfterDiscount);
+        changed |= setIfChanged(biddingContractor.getBidPrice(), contractorPayload.bidPrice(), biddingContractor::setBidPrice);
+        changed |= setIfChanged(biddingContractor.getDiscountRate(), contractorPayload.discountRate(), biddingContractor::setDiscountRate);
+        changed |= setIfChanged(biddingContractor.getBidPriceAfterDiscount(), contractorPayload.bidPriceAfterDiscount(), biddingContractor::setBidPriceAfterDiscount);
         changed |= setIfChanged(biddingContractor.getBidValidityPeriod(), contractInfo.getBidValidityPeriod(), biddingContractor::setBidValidityPeriod);
         changed |= setIfChanged(biddingContractor.getBidGuaranteeValue(), bidGuaranteeAmount, biddingContractor::setBidGuaranteeValue);
         changed |= setIfChanged(biddingContractor.getBidGuaranteeValidityPeriod(), bidGuaranteeEff, biddingContractor::setBidGuaranteeValidityPeriod);
-        changed |= setIfChanged(biddingContractor.getContractExecutionTime(), mapper.text(item, "cperiodText"), biddingContractor::setContractExecutionTime);
+        changed |= setIfChanged(biddingContractor.getContractExecutionTime(), contractorPayload.contractExecutionTime(), biddingContractor::setContractExecutionTime);
         return changed;
     }
 
-    private Long firstLong(List<JsonNode> items, String field) {
-        return items.stream()
-                .map(item -> mapper.longValue(item, field))
+    private Long firstBidGuaranteeAmount(List<BidOpeningContractorPayload> contractors) {
+        return contractors.stream()
+                .map(BidOpeningContractorPayload::bidGuaranteeAmount)
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
     }
 
-    private Integer firstInteger(List<JsonNode> items, String field) {
-        return items.stream()
-                .map(item -> mapper.integer(item, field))
+    private Integer firstBidGuaranteeValidityPeriod(List<BidOpeningContractorPayload> contractors) {
+        return contractors.stream()
+                .map(BidOpeningContractorPayload::bidGuaranteeValidityPeriod)
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse(null);
