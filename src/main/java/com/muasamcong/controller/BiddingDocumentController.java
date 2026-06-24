@@ -13,10 +13,17 @@ import com.muasamcong.integration.portal.PortalDocument;
 import com.muasamcong.integration.portal.PortalSearch;
 import com.muasamcong.model.Contract;
 import com.muasamcong.repository.ContractRepository;
+import com.muasamcong.service.document.BiddingDocumentFileViewService;
 import com.muasamcong.service.document.BiddingDocumentService;
 import com.muasamcong.service.document.DocumentDownloadWorkerService;
+import com.muasamcong.service.document.DocumentFileView;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,6 +39,7 @@ public class BiddingDocumentController {
     private final PortalDocument portalDocumentClient;
     private final ContractRepository contractRepository;
     private final BiddingDocumentService biddingDocumentService;
+    private final BiddingDocumentFileViewService biddingDocumentFileViewService;
     private final DocumentDownloadWorkerService documentDownloadWorkerService;
 
     @PostMapping("/sync-clarifications/{notifyNo}")
@@ -60,6 +68,19 @@ public class BiddingDocumentController {
     @GetMapping("/summary/{notifyNo}")
     public ApiResponse<DocumentSummaryResult> summary(@PathVariable String notifyNo) {
         return ApiResponse.success("Document summary loaded", biddingDocumentService.summary(contract(notifyNo)));
+    }
+
+    @GetMapping("/files/{id}/view")
+    public ResponseEntity<Resource> viewFile(@PathVariable Long id) {
+        DocumentFileView view = biddingDocumentFileViewService.view(id);
+        return ResponseEntity.ok()
+                .contentType(view.mediaType())
+                .contentLength(view.contentLength())
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(view.fileName(), StandardCharsets.UTF_8)
+                        .build()
+                        .toString())
+                .body(view.resource());
     }
 
     @GetMapping("/clarifications/{notifyNo}")

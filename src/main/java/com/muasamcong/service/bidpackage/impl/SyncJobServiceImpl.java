@@ -1,11 +1,11 @@
 package com.muasamcong.service.bidpackage.impl;
 
+import com.muasamcong.config.BidPackageSyncProperties;
 import com.muasamcong.dto.bidpackage.BidPackageFolderImportRequest;
 import com.muasamcong.dto.bidpackage.BidPackageFolderImportResult;
 import com.muasamcong.dto.bidpackage.BidPackageSyncPendingResult;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemResult;
 import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemRunResult;
-import com.muasamcong.dto.bidpackage.syncsystem.BidPackageSyncSystemUpdateRequest;
 import com.muasamcong.dto.document.DocumentDownloadPendingResult;
 import com.muasamcong.dto.export.AutoDownloadExportResult;
 import com.muasamcong.enums.RecordStatus;
@@ -27,19 +27,16 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SyncJobServiceImpl implements SyncJobService {
-    private static final int DEFAULT_INTERVAL_MINUTES = 30;
-    private static final int MIN_INTERVAL_MINUTES = 1;
-    private static final int MAX_INTERVAL_MINUTES = 1440;
     private static final String STATUS_SUCCESS = "SUCCESS";
     private static final String STATUS_FAILED = "FAILED";
     private static final String STATUS_SKIPPED = "SKIPPED";
 
+    private final BidPackageSyncProperties syncProperties;
     private final SyncJobRepository syncJobRepository;
     private final SyncSourceRepository syncSourceRepository;
     private final BidPackageImportService importService;
@@ -51,26 +48,6 @@ public class SyncJobServiceImpl implements SyncJobService {
     @Transactional
     public BidPackageSyncSystemResult getConfig() {
         return toResult(syncJob());
-    }
-
-    @Override
-    @Transactional
-    public BidPackageSyncSystemResult updateConfig(BidPackageSyncSystemUpdateRequest request) {
-        SyncJob syncJob = syncJob();
-        boolean enabled = Boolean.TRUE.equals(request.enabled());
-        int intervalMinutes = normalizeInterval(request.intervalMinutes());
-        List<String> importRootPaths = cleanRootPaths(request.importRootPaths());
-        if (!importRootPaths.isEmpty()) {
-            upsertRootFolders(importRootPaths);
-        }
-        if (enabled && activeSyncSources().isEmpty()) {
-            throw new IllegalArgumentException("At least one active import root folder is required when sync system is enabled");
-        }
-
-        syncJob.setEnabled(enabled);
-        syncJob.setIntervalMinutes(intervalMinutes);
-        syncJob.setNextRunAt(enabled ? OffsetDateTime.now().plusMinutes(intervalMinutes) : null);
-        return toResult(syncJobRepository.save(syncJob));
     }
 
     @Override
@@ -86,9 +63,6 @@ public class SyncJobServiceImpl implements SyncJobService {
                     syncJob.setRunning(false);
                     syncJob.setLastStatus(STATUS_FAILED);
                     syncJob.setLastError("Previous sync run was interrupted by application restart");
-                    syncJob.setNextRunAt(Boolean.TRUE.equals(syncJob.getEnabled())
-                            ? OffsetDateTime.now().plusMinutes(syncJob.getIntervalMinutes())
-                            : null);
                     syncJobRepository.save(syncJob);
                     log.warn("Reset interrupted bid package sync system run");
                 });
@@ -97,14 +71,11 @@ public class SyncJobServiceImpl implements SyncJobService {
     private BidPackageSyncSystemRunResult run(boolean scheduled) {
         SyncJob syncJob = syncJob();
         OffsetDateTime now = OffsetDateTime.now();
-        if (scheduled && !Boolean.TRUE.equals(syncJob.getEnabled())) {
+        if (scheduled && !syncProperties.isEnabled()) {
             return skipped(syncJob, "Sync system is disabled");
         }
         if (Boolean.TRUE.equals(syncJob.getRunning())) {
             return skipped(syncJob, "Sync system is already running");
-        }
-        if (scheduled && syncJob.getNextRunAt() != null && now.isBefore(syncJob.getNextRunAt())) {
-            return skipped(syncJob, "Next run time has not arrived");
         }
 
         List<SyncSource> activeSyncSources = activeSyncSources();
@@ -115,25 +86,24 @@ public class SyncJobServiceImpl implements SyncJobService {
             throw new IllegalStateException("At least one active import root folder is required");
         }
 
-            syncJob.setRunning(true);
-            syncJob.setLastError(null);
-            syncJob.setStartedAt(now);
-            syncJob.setEndedAt(null);
-            resetProgress(syncJob);
-            syncJobRepository.save(syncJob);
+        syncJob.setRunning(true);
+        syncJob.setLastError(null);
+        syncJob.setStartedAt(now);
+        syncJob.setEndedAt(null);
+        resetProgress(syncJob);
+        syncJobRepository.save(syncJob);
 
         try {
             BidPackageFolderImportResult importResult = importActiveSyncSources(activeSyncSources);
             BidPackageSyncPendingResult syncPendingResult = syncItemService.syncPending();
             BidPackageSyncPendingResult refreshSuccessResult = syncItemService.refreshSuccess();
-            DocumentDownloadPendingResult documentDownloadResult = documentDownloadWorkerService.downloadPending(50);
+            DocumentDownloadPendingResult documentDownloadResult = documentDownloadWorkerService.downloadPending(documentDownloadLimit());
             AutoDownloadExportResult exportResult = exportWorkerService.exportSuccessfulPackages();
 
             OffsetDateTime finishedAt = OffsetDateTime.now();
             applyProgress(syncJob, syncPendingResult, refreshSuccessResult);
             syncJob.setEndedAt(finishedAt);
             syncJob.setLastRunAt(finishedAt);
-            syncJob.setNextRunAt(Boolean.TRUE.equals(syncJob.getEnabled()) ? finishedAt.plusMinutes(syncJob.getIntervalMinutes()) : null);
             syncJob.setLastStatus(STATUS_SUCCESS);
             syncJob.setLastError(null);
             syncJob.setRunning(false);
@@ -159,7 +129,6 @@ public class SyncJobServiceImpl implements SyncJobService {
             OffsetDateTime failedAt = OffsetDateTime.now();
             syncJob.setEndedAt(failedAt);
             syncJob.setLastRunAt(failedAt);
-            syncJob.setNextRunAt(Boolean.TRUE.equals(syncJob.getEnabled()) ? failedAt.plusMinutes(syncJob.getIntervalMinutes()) : null);
             syncJob.setLastStatus(STATUS_FAILED);
             syncJob.setLastError(safeMessage(ex));
             syncJob.setRunning(false);
@@ -176,8 +145,6 @@ public class SyncJobServiceImpl implements SyncJobService {
     private SyncJob syncJob() {
         return syncJobRepository.findTopByOrderByIdAsc().orElseGet(() -> {
             SyncJob syncJob = new SyncJob();
-            syncJob.setEnabled(false);
-                syncJob.setIntervalMinutes(DEFAULT_INTERVAL_MINUTES);
             syncJob.setRunning(false);
             return syncJobRepository.save(syncJob);
         });
@@ -185,11 +152,11 @@ public class SyncJobServiceImpl implements SyncJobService {
 
     private BidPackageSyncSystemResult toResult(SyncJob syncJob) {
         return new BidPackageSyncSystemResult(
-                syncJob.getEnabled(),
-                syncJob.getIntervalMinutes(),
+                syncProperties.isEnabled(),
+                syncProperties.getFixedDelayMs(),
+                documentDownloadLimit(),
                 activeSyncSources().stream().map(SyncSource::getPath).toList(),
                 syncJob.getLastRunAt(),
-                syncJob.getNextRunAt(),
                 syncJob.getRunning(),
                 syncJob.getLastStatus(),
                 syncJob.getLastError(),
@@ -220,39 +187,12 @@ public class SyncJobServiceImpl implements SyncJobService {
         syncJob.setFailedItems(failed);
     }
 
-    private int normalizeInterval(Integer value) {
-        int interval = value == null ? DEFAULT_INTERVAL_MINUTES : value;
-        if (interval < MIN_INTERVAL_MINUTES || interval > MAX_INTERVAL_MINUTES) {
-            throw new IllegalArgumentException("intervalMinutes must be between 1 and 1440");
-        }
-        return interval;
-    }
-
-    private List<String> cleanRootPaths(List<String> rootPaths) {
-        if (rootPaths == null) {
-            return List.of();
-        }
-        return rootPaths.stream()
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .distinct()
-                .toList();
-    }
-
     private List<SyncSource> activeSyncSources() {
         return syncSourceRepository.findByStatusOrderByCreatedAtAsc(RecordStatus.ACTIVE);
     }
 
-    private void upsertRootFolders(List<String> rootPaths) {
-        cleanRootPaths(rootPaths).forEach(path -> {
-            SyncSource syncSource = syncSourceRepository.findByPath(path).orElseGet(() -> {
-                SyncSource newSyncSource = new SyncSource();
-                newSyncSource.setPath(path);
-                return newSyncSource;
-            });
-            syncSource.setStatus(RecordStatus.ACTIVE);
-            syncSourceRepository.save(syncSource);
-        });
+    private int documentDownloadLimit() {
+        return Math.max(syncProperties.getDocumentDownloadLimit(), 1);
     }
 
     private BidPackageFolderImportResult importActiveSyncSources(List<SyncSource> syncSources) {

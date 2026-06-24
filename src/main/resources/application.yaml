@@ -7,12 +7,8 @@ spring:
   application:
     name: muasamcong
 
-
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/muasamcong}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
-    driver-class-name: org.postgresql.Driver
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   jpa:
     hibernate:
@@ -32,12 +28,14 @@ gateway:
 
 app:
   cors:
-    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://127.0.0.1:3000,http://192.168.*.*:3000,http://172.*.*.*:3000}
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:3000,http://127.0.0.1:3000,http://192.168.*.*:3000,http://172.*.*.*:3000,https://leonore-cyclonal-preindependently.ngrok-free.dev}
+
+sync:
+  bid-package:
+    enabled: ${BID_PACKAGE_SYNC_ENABLED:true}
+    fixed-delay-ms: ${BID_PACKAGE_SYNC_FIXED_DELAY_MS:1800000}
+    document-download-limit: ${BID_PACKAGE_SYNC_DOCUMENT_DOWNLOAD_LIMIT:50}
 
 smb:
-  host: ${SMB_HOST:192.168.0.13}
   port: ${SMB_PORT:445}
   domain: ${SMB_DOMAIN:}
-  username: ${SMB_USERNAME:phongtm}
-  password: ${SMB_PASSWORD:@TMphong2026$}
-  share-folder: ${SMB_SHARE_FOLDER:Du_Lieu_chung$}

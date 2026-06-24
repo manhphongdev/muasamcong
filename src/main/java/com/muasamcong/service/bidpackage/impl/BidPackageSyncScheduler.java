@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 public class BidPackageSyncScheduler {
     private final SyncJobService syncJobService;
 
-    @Scheduled(fixedDelay = 60000)
+    @Scheduled(fixedDelayString = "${sync.bid-package.fixed-delay-ms:60000}")
     public void tick() {
         try {
             syncJobService.runScheduledIfDue();

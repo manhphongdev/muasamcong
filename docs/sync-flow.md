@@ -12,19 +12,24 @@ BidPackageSyncScheduler.tick()
 -> SyncJobServiceImpl.run(true)
 ```
 
-The scheduler runs every 60 seconds. `SyncJobServiceImpl` decides whether the sync system is enabled, already running, or due to run.
+The scheduler delay is configured by `sync.bid-package.fixed-delay-ms` in the YAML config (`application.yaml` plus the active profile file). `SyncJobServiceImpl` uses YAML config to decide whether the sync system is enabled, and uses `SyncJob.running` to prevent overlapping runs.
 
 ### Sync System Config
 
 ```text
 GET /bid-package-sync-system
 -> BidPackageSyncSystemController.getConfig()
-
-PUT /bid-package-sync-system
--> BidPackageSyncSystemController.updateConfig(request)
 ```
 
-The sync system is executed by the scheduler. There is no manual run-now endpoint.
+The sync system is configured from YAML and executed by the scheduler. There is no manual run-now endpoint and no API endpoint for changing scheduler config.
+
+```yaml
+sync:
+  bid-package:
+    enabled: true
+    fixed-delay-ms: 60000
+    document-download-limit: 50
+```
 
 ### Manual Single Package Sync
 
@@ -55,16 +60,16 @@ POST /bid-packages/refresh-success
 
 ```text
 run()
--> load SyncJob config
--> skip if disabled / already running / not due
+-> load YAML config and SyncJob runtime state
+-> skip if disabled / already running
 -> load active SyncSource rows
 -> mark SyncJob running
 -> importActiveSyncSources(activeSyncSources)
 -> syncItemService.syncPending()
 -> syncItemService.refreshSuccess()
--> documentDownloadWorkerService.downloadPending(50)
+-> documentDownloadWorkerService.downloadPending(configuredLimit)
 -> exportWorkerService.exportSuccessfulPackages()
--> update SyncJob totals/status/nextRunAt
+-> update SyncJob totals/status
 ```
 
 ### Data Written By Job Flow
@@ -76,7 +81,6 @@ running
 startedAt
 endedAt
 lastRunAt
-nextRunAt
 lastStatus
 lastError
 totalItems
@@ -565,7 +569,7 @@ GET /bid-packages/tracking
 -> build BidPackageTrackingDto
 ```
 
-Tracking does not call the portal and does not sync data.
+Tracking does not call the portal, does not sync data, and does not perform SMB filesystem checks. `folderExists` is derived from whether a source path is present so the list page stays responsive even when SMB is slow or unavailable.
 
 ## Current Refactor State
 

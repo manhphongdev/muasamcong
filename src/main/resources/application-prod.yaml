@@ -1,0 +1,20 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+gateway:
+  url: ${GATEWAY_URL}
+  key: ${GATEWAY_KEY}
+
+app:
+  cors:
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS}
+
+smb:
+  host: ${SMB_HOST}
+  username: ${SMB_USERNAME}
+  password: ${SMB_PASSWORD}
+  share-folder: ${SMB_SHARE_FOLDER}

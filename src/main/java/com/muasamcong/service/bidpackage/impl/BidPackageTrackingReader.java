@@ -19,7 +19,6 @@ import com.muasamcong.repository.BiddingResultRepository;
 import com.muasamcong.repository.ContractInfoRepository;
 import com.muasamcong.repository.ContractRepository;
 import com.muasamcong.repository.SyncItemRepository;
-import com.muasamcong.service.storage.SyncStorageService;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -47,7 +46,6 @@ public class BidPackageTrackingReader {
     private final BiddingResultRepository biddingResultRepository;
     private final BiddingDocumentRepository biddingDocumentRepository;
     private final BiddingContractorRepository biddingContractorRepository;
-    private final SyncStorageService syncStorageService;
 
     @Transactional(readOnly = true)
     public Page<BidPackageTrackingDto> searchTracking(String search, String status, String kpiFilter, Pageable pageable) {
@@ -290,14 +288,7 @@ public class BidPackageTrackingReader {
     }
 
     private Boolean folderExists(String folderPath) {
-        if (folderPath == null || folderPath.isBlank()) {
-            return false;
-        }
-        try {
-            return syncStorageService.isDirectory(folderPath.trim());
-        } catch (Exception ex) {
-            return false;
-        }
+        return folderPath != null && !folderPath.isBlank();
     }
 
     private String normalizeFilter(String value) {

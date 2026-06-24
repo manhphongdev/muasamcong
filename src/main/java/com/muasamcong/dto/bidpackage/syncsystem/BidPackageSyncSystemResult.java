@@ -5,10 +5,10 @@ import java.util.List;
 
 public record BidPackageSyncSystemResult(
         Boolean enabled,
-        Integer intervalMinutes,
+        Long fixedDelayMs,
+        Integer documentDownloadLimit,
         List<String> importRootPaths,
         OffsetDateTime lastRunAt,
-        OffsetDateTime nextRunAt,
         Boolean running,
         String lastStatus,
         String lastError,

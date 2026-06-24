@@ -30,14 +30,4 @@ public class BidPackageSyncRootFolderController {
     public ApiResponse<BidPackageSyncRootFolderCreateResult> create(@RequestBody BidPackageSyncRootFolderCreateRequest request) {
         return ApiResponse.success("Root folders saved", service.create(request.paths()));
     }
-
-    @PatchMapping("/{id}/activate")
-    public ApiResponse<BidPackageSyncRootFolderResult> activate(@PathVariable Long id) {
-        return ApiResponse.success("Root folder activated", service.activate(id));
-    }
-
-    @PatchMapping("/{id}/deactivate")
-    public ApiResponse<BidPackageSyncRootFolderResult> deactivate(@PathVariable Long id) {
-        return ApiResponse.success("Root folder deactivated", service.deactivate(id));
-    }
 }

@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/muasamcong}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: org.postgresql.Driver
+
+smb:
+  host: ${SMB_HOST:192.168.0.13}
+  username: ${SMB_USERNAME}
+  password: ${SMB_PASSWORD}
+  share-folder: ${SMB_SHARE_FOLDER:Du_Lieu_chung$}
